@@ -93,9 +93,12 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             self._iso = None
             self._iso2 = None
 
+        # Patch in the "jet" colormap used in the demo etc.
+        pg.graphicsItems.GradientEditorItem.Gradients['jet'] = {'ticks' :[(0.0 / 63, (0, 0, 144)), (7.0 / 63, (0, 0, 255)), (23.0 / 63, (0, 255, 255)), (39.0 / 63, (255, 255, 0)), (55.0 / 63, (255, 0, 0)), (63.0 / 63, (127, 0, 0))], 'mode': 'rgb'}
+
         # Contrast/color control
         self._hist = pg.HistogramLUTItem()
-        self._hist.gradient.loadPreset('spectrum') #viridis
+        self._hist.gradient.loadPreset('jet') #spectrum, viridis
         self._hist.setLevels(-90, 0)
         self._hist.setImageItem(self._img)
         self._hist.axis.setLabel('Magnitude', 'dB')
