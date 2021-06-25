@@ -4,7 +4,7 @@ from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
-    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton
+    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog
 import pyqtgraph as pg
 import numpy as np
 
@@ -196,7 +196,7 @@ class SarGuiMainFrame(QMainWindow):
         self._state = simstate.create_state()
 
         self._create_menu()
-        self._create_parameter_dock()
+        self._param_widgets = self._create_parameter_dock()
 
         self._create_mdi()
         self._create_status_bar()
@@ -230,12 +230,35 @@ class SarGuiMainFrame(QMainWindow):
     def _create_menu(self):
         bar = self.menuBar()
         file = bar.addMenu('&File')
+        file.addAction('Load parameters').triggered.connect(self._load_param_file)
+        file.addAction('Save parameters').triggered.connect(self._save_param_file)
         file.addAction('E&xit').triggered.connect(lambda: self.close())
 
         view = bar.addMenu('&View')
         view.addAction('&Tiled').triggered.connect(lambda: self.mdi.tileSubWindows())
         view.addAction('&Cascade').triggered.connect(lambda: self.mdi.cascadeSubWindows())
         view.addAction('&Maximized').triggered.connect(lambda: self.mdi.currentSubWindow().showMaximized())
+
+    def _load_param_file(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "Select parameter file", filter="*.ini")
+        if filename:
+            self._state = simstate.SarSimParameterState.read_from_file(filename)
+
+        # Update the UI with the new values
+        for param in self._state.get_parameters():
+            spinner = self._param_widgets[param.name]
+            val = self._state.get_value(param)
+            if isinstance(spinner, QDoubleSpinBox):
+                factor = spinner.property('si_factor')
+                val /= factor
+            spinner.setValue(val)
+
+    def _save_param_file(self):
+        filename, _ = QFileDialog.getSaveFileName(self, "Select parameter file", filter="*.ini")
+        if filename:
+            if not filename.endswith(".ini"):
+                filename = filename + ".ini"
+            self._state.write_to_file(filename)
 
     def on_parameter_spinbox_change(self, symbol: str, value: float):
         print(f'{symbol} = {value}')
@@ -246,6 +269,9 @@ class SarGuiMainFrame(QMainWindow):
 
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+
+        widgets = {} # Save all widget in a dict, so that we can update them from _load_param_file()
+        # TODO: Refactor this into a class?
 
         for parameter in self._state.get_parameters():
             box = None
@@ -281,6 +307,7 @@ class SarGuiMainFrame(QMainWindow):
                 break  # others not supported for now in GUI
 
             form.addRow(parameter.human_name(), box)
+            widgets[parameter.name] = box
 
         btn = QPushButton('RUN SIM')
         btn.clicked.connect(self._rerun_sim)
@@ -298,6 +325,8 @@ class SarGuiMainFrame(QMainWindow):
 
         self._parameter_dock = dock
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+
+        return widgets
 
     def _autorange_plots(self):
         self._plot_window_raw.do_autorange()

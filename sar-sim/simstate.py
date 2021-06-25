@@ -1,6 +1,6 @@
 from typing import NamedTuple, Tuple, Any, Union, List, Iterable
 import numpy as np
-
+import configparser
 
 class SimParameterType(NamedTuple):
     type: type
@@ -87,6 +87,38 @@ class SarSimParameterState(object):
     def get_parameters() -> Tuple[SimParameter, ...]:
         return SAR_SIM_PARAMETERS
 
+    def write_to_file(self, filename: str):
+        cfg = configparser.ConfigParser()
+        cfg['params'] = {}
+        
+        for param in self.get_parameters():
+            cfg['params'][param.name] = str(self.get_value(param)) # everything must be a string
+        
+        with open(filename, 'w') as f:
+            cfg.write(f)
+
+    @staticmethod
+    def read_from_file(filename: str):
+        cfg = configparser.ConfigParser()
+        cfg.read(filename)
+
+        state = SarSimParameterState()
+
+        for param in SarSimParameterState.get_parameters():
+            if param.type.type == int:
+                val = cfg['params'].getint(param.name)
+            elif param.type.type == float:
+                val = cfg['params'].getfloat(param.name)
+            elif param.type.type == bool:
+                val = cfg['params'].getboolean(param.name)
+            elif param.type.type == str:
+                val = cfg['params'].get(param.name)
+            else:
+                raise NotImplementedError(f"Type {param.type.type} is not supported by the config file read yet")
+            
+            state.set_value(param, val)
+
+        return state
 
 def _finalize():
     for parameter in SAR_SIM_PARAMETERS:
