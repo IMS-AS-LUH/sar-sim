@@ -48,6 +48,10 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._data_tr = tr
         self._img.setTransform(self._data_tr)
 
+        # Update data cuts
+        if self._type == 'azimuth_comp':
+            self._update_cuts()
+
     def _set_random_data(self):
         # Generate image data
         data = np.random.normal(size=(200, 100))
@@ -169,8 +173,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._img.setImage(self._data)
         # hist.setLevels(data.min(), data.max())
         self._hist.setLevels(lmin, lmax)
-        if self._type == 'azimuth_comp':
-            self._update_cuts()
 
         # build isocurves from smoothed data
         if self._iso is not None:
@@ -179,6 +181,10 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             gfilter = self._data
             self._iso.setData(gfilter)
             self._iso2.setData(gfilter)
+        
+        # Update data cuts
+        if self._type == 'azimuth_comp':
+            self._update_cuts()
 
         # set position and scale of image
         self._img.setTransform(self._data_tr)
