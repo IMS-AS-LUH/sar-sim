@@ -153,9 +153,9 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             return
         range_curve = self._range_cut_plot.listDataItems()[0]
         azi_curve = self._azi_cut_plot.listDataItems()[0]
-        range_pos, azi_pos = self._data_tr.inverted()[0].map(self._range_line.value(), self._azi_line.value())
+        azi_pos, range_pos = self._data_tr.inverted()[0].map(self._azi_line.value(), self._range_line.value())
         range_curve.setData(self._data[int(range_pos), :]) # transposed plot
-        azi_curve.setData(x=self._data[:, int(azi_pos)], y=range(self._data.shape[1]))
+        azi_curve.setData(x=self._data[:, int(azi_pos)], y=range(self._data.shape[0]))
 
     def _update_levels(self):
         if self._data is None:
