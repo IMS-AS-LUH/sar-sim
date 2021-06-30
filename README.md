@@ -6,7 +6,7 @@ parameters and then applying basic image formation algorithms.
 ### How to run
 Install dependencies:
 - Python packages: ```pyqtgraph``` 
-- Related packages: ```pyqt5```, ```numpy```
+- Related packages: ```pyqt5```, ```numpy```, `scipy`
 - Optional packages: ```numba``` (for CUDA)
 
 Run as python module (Note: only usable with GUI currently):
