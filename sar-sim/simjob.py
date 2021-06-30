@@ -65,14 +65,6 @@ def run_sim(state: simstate.SarSimParameterState,
         for x in azimuth_x
     ])
 
-    # Antenna Diagram (dummy for now)
-    def antenna_diagram(angle_rad: float) -> float:
-        normalized = math.fabs(angle_rad * 180 / state.azimuth_3db_angle_deg / math.pi)
-        if normalized < 2:
-            return math.cos(math.pi * normalized / 4) ** 2
-        else:
-            return 0
-
     # FMCW Simulation
     fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)
     fmcw_up = True if state.fmcw_stop_frequency > state.fmcw_start_frequency else False
@@ -91,30 +83,7 @@ def run_sim(state: simstate.SarSimParameterState,
 
     timestamper.tic('FMCW Simulation')
 
-    fmcw_lines = []
-
-    for flight_point in flight_path:
-        fmcw_line = np.array([0] * fmcw_samples)
-        for reflector in reflectors:
-            delta_vector_x = reflector[0] - flight_point[0]
-            delta_vector_y = reflector[1] - flight_point[1]
-            delta_vector_z = reflector[2] - flight_point[2]
-            delta_r = math.sqrt(delta_vector_x**2 +delta_vector_y**2 +delta_vector_z**2)
-            delta_t = 2 * delta_r / signal_speed
-
-            # b is the constant phase term
-            b = (2 * math.pi * state.fmcw_start_frequency * delta_t) - (math.pi * fmcw_slope * delta_t * delta_t)
-            # c is the angular frequency term
-            c = 2 * math.pi * fmcw_slope * delta_t
-            a = 0.5 * reflector[3]
-
-            # Apply antenna diagram
-            azimuth_angle = math.atan2(delta_vector_x, delta_vector_y)
-            # elevation_angle = math.atan2(delta_vector.z, math.sqrt(delta_vector.x**2 + delta_vector.y**2))
-            a = a * antenna_diagram(azimuth_angle)
-
-            fmcw_line = fmcw_line + np.array([a * math.cos(b + c * t) for t in fmcw_t])
-        fmcw_lines.append(fmcw_line)
+    fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
 
     timestamper.toc()
 
@@ -231,3 +200,59 @@ def run_sim(state: simstate.SarSimParameterState,
         ac=simstate.SimImage(np.array(image),
                              image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
     )
+
+_fmcw_cache = {}
+
+def _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, fmcw_start_frequency, fmcw_slope, fmcw_t, azimuth_3db_angle_deg):
+    # We cache repeating call with identical parameters to speed up the simulation
+    cache_key = (
+        hash(flight_path.data.tobytes()),
+        fmcw_samples,
+        tuple(reflectors),
+        signal_speed,
+        fmcw_start_frequency,
+        fmcw_slope,
+        hash(fmcw_t.data.tobytes()),
+        azimuth_3db_angle_deg,
+    )
+    cache_key = hash(cache_key)
+    if cache_key in _fmcw_cache.keys():
+        print("Using cached FMCW simulation")
+        return _fmcw_cache[cache_key]
+
+    # Antenna Diagram (dummy for now)
+    def antenna_diagram(angle_rad: float) -> float:
+        normalized = math.fabs(angle_rad * 180 / azimuth_3db_angle_deg / math.pi)
+        if normalized < 2:
+            return math.cos(math.pi * normalized / 4) ** 2
+        else:
+            return 0
+
+    fmcw_lines = []
+
+    for flight_point in flight_path:
+        fmcw_line = np.array([0] * fmcw_samples)
+        for reflector in reflectors:
+            delta_vector_x = reflector[0] - flight_point[0]
+            delta_vector_y = reflector[1] - flight_point[1]
+            delta_vector_z = reflector[2] - flight_point[2]
+            delta_r = math.sqrt(delta_vector_x**2 +delta_vector_y**2 +delta_vector_z**2)
+            delta_t = 2 * delta_r / signal_speed
+
+            # b is the constant phase term
+            b = (2 * math.pi * fmcw_start_frequency * delta_t) - (math.pi * fmcw_slope * delta_t * delta_t)
+            # c is the angular frequency term
+            c = 2 * math.pi * fmcw_slope * delta_t
+            a = 0.5 * reflector[3]
+
+            # Apply antenna diagram
+            azimuth_angle = math.atan2(delta_vector_x, delta_vector_y)
+            # elevation_angle = math.atan2(delta_vector.z, math.sqrt(delta_vector.x**2 + delta_vector.y**2))
+            a = a * antenna_diagram(azimuth_angle)
+
+            fmcw_line = fmcw_line + np.array([a * math.cos(b + c * t) for t in fmcw_t])
+        fmcw_lines.append(fmcw_line)
+
+    _fmcw_cache[cache_key] = fmcw_lines
+
+    return fmcw_lines
