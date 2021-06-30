@@ -15,11 +15,12 @@ from . import profiling
 
 
 class SarGuiPlotSubWindow(QMdiSubWindow):
-    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm') -> None:
+    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', type: str = '') -> None:
         super().__init__()
         self.setWindowTitle('Plot')
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
+        self._type = type
 
         self._create_plot_widget()
 
@@ -47,6 +48,10 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._data_tr = tr
         self._img.setTransform(self._data_tr)
 
+        # Update data cuts
+        if self._type == 'azimuth_comp':
+            self._update_cuts()
+
     def _set_random_data(self):
         # Generate image data
         data = np.random.normal(size=(200, 100))
@@ -59,6 +64,9 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
     def do_autorange(self):
         self._hist.setLevels(-90, 0)
         self._p1.autoRange()
+        if self._type == 'azimuth_comp':
+            self._range_line.setValue(0)
+            self._azi_line.setValue(0)
 
     def _create_plot_widget(self):
         # Interpret image data as row-major instead of col-major
@@ -68,18 +76,34 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._layout = pg.GraphicsLayoutWidget()
 
         # A plot area (ViewBox + axes) for displaying the image
-        self._p1: pg.PlotItem = self._layout.addPlot(title="")
+        self._p1: pg.PlotItem = self._layout.addPlot(row=1, col=1, title="")
 
         # Item for displaying image data
         self._img = pg.ImageItem()
         self._p1.addItem(self._img)
 
-        # Custom ROI for selecting an image region
-        # roi = pg.ROI([-8, 14], [6, 5])
-        # roi.addScaleHandle([0.5, 1], [0.5, 0.5])
-        # roi.addScaleHandle([0, 0.5], [0.5, 0.5])
-        # p1.addItem(roi)
-        # roi.setZValue(10)  # make sure ROI is drawn above image
+        # Two movable lines for "cuts" trough the data
+        if self._type == 'azimuth_comp':
+            self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
+            self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
+            self._p1.addItem(self._range_line)
+            self._p1.addItem(self._azi_line)
+            self._range_line.setZValue(10)  # make sure line is drawn above image
+            self._azi_line.setZValue(10)
+            self._range_line.sigDragged.connect(self._update_cuts)
+            self._azi_line.sigDragged.connect(self._update_cuts)
+
+            # Line plot of the cuts
+            self._range_cut_plot: pg.PlotItem = self._layout.addPlot(row=0, col=1)
+            self._azi_cut_plot: pg.PlotItem = self._layout.addPlot(row=1, col=0)
+            self._azi_cut_plot.setFixedWidth(130)
+            self._range_cut_plot.setFixedHeight(130)
+            # self._layout.ci.layout.setRowMaximumHeight(0, 130) # set width/height of cut-plots
+            # self._layout.ci.layout.setColumnMaximumWidth(0, 130)
+            self._range_cut_plot.plot()
+            self._azi_cut_plot.plot()
+            self._range_cut_plot.setLabel('left', 'Magnitude', 'dB')
+            self._azi_cut_plot.setLabel('bottom', 'Magnitude', 'dB')
 
         # Isocurve drawing
         if isolines:
@@ -102,7 +126,10 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._hist.setLevels(-90, 0)
         self._hist.setImageItem(self._img)
         self._hist.axis.setLabel('Magnitude', 'dB')
-        self._layout.addItem(self._hist)
+        self._layout.addItem(self._hist, row=1, col=2)
+
+        if self._type == 'azimuth_comp':
+            self._hist.sigLevelsChanged.connect(self._update_levels)
 
         # Draggable line for setting isocurve level
         if isolines:
@@ -128,6 +155,24 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         # but it works for a very simple use like this.
         self._img.hoverEvent = self._image_hover_event
 
+    def _update_cuts(self):
+        if self._data is None:
+            return
+        range_curve = self._range_cut_plot.listDataItems()[0]
+        azi_curve = self._azi_cut_plot.listDataItems()[0]
+        azi_pos, range_pos = self._data_tr.inverted()[0].map(self._azi_line.value(), self._range_line.value())
+        if int(range_pos) in range(self._data.shape[0]):
+            range_curve.setData(self._data[int(range_pos), :]) # transposed plot
+        if int(azi_pos) in range(self._data.shape[1]):
+            azi_curve.setData(x=self._data[:, int(azi_pos)], y=range(self._data.shape[0]))
+
+    def _update_levels(self):
+        if self._data is None:
+            return
+        lmin, lmax = self._hist.getLevels()
+        self._range_cut_plot.vb.setYRange(lmin, lmax)
+        self._azi_cut_plot.vb.setXRange(lmin, lmax)
+            
     def _update_data(self):
         lmin, lmax = self._hist.getLevels()
         self._img.setImage(self._data)
@@ -141,6 +186,10 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             gfilter = self._data
             self._iso.setData(gfilter)
             self._iso2.setData(gfilter)
+        
+        # Update data cuts
+        if self._type == 'azimuth_comp':
+            self._update_cuts()
 
         # set position and scale of image
         self._img.setTransform(self._data_tr)
@@ -204,9 +253,9 @@ class SarGuiMainFrame(QMainWindow):
         self._create_mdi()
         self._create_status_bar()
 
-        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's')
-        self._plot_window_rc = SarGuiPlotSubWindow(False)
-        self._plot_window_ac = SarGuiPlotSubWindow()
+        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', type='raw')
+        self._plot_window_rc = SarGuiPlotSubWindow(False, type='range_comp')
+        self._plot_window_ac = SarGuiPlotSubWindow(type='azimuth_comp')
 
         self._plot_window_raw.setWindowTitle('Raw FMCW Data')
         self._plot_window_rc.setWindowTitle('Range Compression')
