@@ -62,13 +62,12 @@ SAR_SIM_PARAMETERS = (
 
 
 class SarSimParameterState(object):
-    # <dynamic_properties>
-
     @staticmethod
     def _internal_name(parameter: SimParameter):
         return f'_v_{parameter.name}'
 
     def __init__(self):
+        # <dynamic_properties>
         for parameter in SAR_SIM_PARAMETERS:
             self.__setattr__(SarSimParameterState._internal_name(parameter), parameter.type.type(parameter.default))
         pass
@@ -156,7 +155,7 @@ def write_simstate_stub_file() -> None:
                     indent = ' '*line.index('#')
                     f.write(f'{indent}# BEGIN OF ADDED DYNAMIC PROPERTIES >>\n')
                     for parameter in SAR_SIM_PARAMETERS:
-                        f.write(f'{indent}{parameter.name}: {parameter.type.type.__name__} = {parameter.default}\n')
+                        f.write(f'{indent}self.{parameter.name}: {parameter.type.type.__name__} = {parameter.default}\n')
                         f.write(f'{indent}"""\n')
                         f.write(f'{indent}**{parameter.symbol} [{parameter.type.unit}]** {parameter.human_name()}\n\n')
                         if parameter.type.min is not None or parameter.type.max is not None:
