@@ -160,11 +160,16 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             return
         range_curve = self._range_cut_plot.listDataItems()[0]
         azi_curve = self._azi_cut_plot.listDataItems()[0]
-        azi_pos, range_pos = self._data_tr.inverted()[0].map(self._azi_line.value(), self._range_line.value())
+        inv_transform, _ = self._data_tr.inverted()
+        azi_pos, range_pos = inv_transform.map(self._azi_line.value(), self._range_line.value())
+        # get the real-world coordinates for the data start/end
+        rg_start, az_start = self._data_tr.map(0.5, 0.5)
+        rg_end, az_end = self._data_tr.map(self._data.shape[1]-0.5, self._data.shape[0]-0.5)
+        az_cnt, rg_cnt = self._data.shape
         if int(range_pos) in range(self._data.shape[0]):
-            range_curve.setData(self._data[int(range_pos), :]) # transposed plot
+            range_curve.setData(y=self._data[int(range_pos), :], x=np.linspace(rg_start, rg_end, rg_cnt))
         if int(azi_pos) in range(self._data.shape[1]):
-            azi_curve.setData(x=self._data[:, int(azi_pos)], y=range(self._data.shape[0]))
+            azi_curve.setData(x=self._data[:, int(azi_pos)], y=np.linspace(az_start, az_end, az_cnt)) # get real-world coordinates of data 0,0
 
     def _update_levels(self):
         if self._data is None:
