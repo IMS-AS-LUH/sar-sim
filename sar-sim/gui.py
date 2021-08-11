@@ -15,12 +15,12 @@ from . import profiling
 
 
 class SarGuiPlotSubWindow(QMdiSubWindow):
-    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', type: str = '') -> None:
+    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', variant: str = '') -> None:
         super().__init__()
         self.setWindowTitle('Plot')
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
-        self._type = type
+        self._variant = variant
 
         self._create_plot_widget()
 
@@ -49,7 +49,7 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._img.setTransform(self._data_tr)
 
         # Update data cuts
-        if self._type == 'azimuth_comp':
+        if self._variant == 'azimuth_comp':
             self._update_cuts()
 
     def _set_random_data(self):
@@ -64,7 +64,7 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
     def do_autorange(self):
         self._hist.setLevels(-90, 0)
         self._p1.autoRange()
-        if self._type == 'azimuth_comp':
+        if self._variant == 'azimuth_comp':
             self._range_line.setValue(0)
             self._azi_line.setValue(0)
 
@@ -83,7 +83,7 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._p1.addItem(self._img)
 
         # Two movable lines for "cuts" trough the data
-        if self._type == 'azimuth_comp':
+        if self._variant == 'azimuth_comp':
             self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
             self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
             self._p1.addItem(self._range_line)
@@ -128,7 +128,7 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._hist.axis.setLabel('Magnitude', 'dB')
         self._layout.addItem(self._hist, row=1, col=2)
 
-        if self._type == 'azimuth_comp':
+        if self._variant == 'azimuth_comp':
             self._hist.sigLevelsChanged.connect(self._update_levels)
 
         # Draggable line for setting isocurve level
@@ -193,7 +193,7 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             self._iso2.setData(gfilter)
         
         # Update data cuts
-        if self._type == 'azimuth_comp':
+        if self._variant == 'azimuth_comp':
             self._update_cuts()
 
         # set position and scale of image
@@ -258,9 +258,9 @@ class SarGuiMainFrame(QMainWindow):
         self._create_mdi()
         self._create_status_bar()
 
-        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', type='raw')
-        self._plot_window_rc = SarGuiPlotSubWindow(False, type='range_comp')
-        self._plot_window_ac = SarGuiPlotSubWindow(type='azimuth_comp')
+        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', variant='raw')
+        self._plot_window_rc = SarGuiPlotSubWindow(False, variant='range_comp')
+        self._plot_window_ac = SarGuiPlotSubWindow(variant='azimuth_comp')
 
         self._plot_window_raw.setWindowTitle('Raw FMCW Data')
         self._plot_window_rc.setWindowTitle('Range Compression')
