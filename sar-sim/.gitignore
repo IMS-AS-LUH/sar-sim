@@ -1,0 +1,4 @@
+# Local Ignore for the sar-sim module
+
+# Do not track generated stub files
+/simstate.pyi

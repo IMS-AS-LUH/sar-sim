@@ -24,6 +24,9 @@ See also CLI console output for status and information.
 - Live-Update of preview graphs
 - CUDA Acceleration of Azimuth Compression if possible
 
+### Development tools
+- Run ```python3 -m sar-sim --write-stubs``` to enable IDE support for better autocompletion
+
 Todo:
 - Doppler-Shift due to platform or target movement
 - Variable reflectors
