@@ -1,6 +1,7 @@
 from typing import NamedTuple, Tuple, Any, Union, List, Iterable
 import numpy as np
 import configparser
+from .operations import SUPPORTED_WINDOWS
 
 class SimParameterType(NamedTuple):
     type: type
@@ -31,6 +32,9 @@ _RAMP_TIME = SimParameterType(float, unit='s', min=1e-6, max=100)
 _METERS = SimParameterType(float, unit='m', min=-100e3, max=100e3)
 _COUNT = SimParameterType(int, min=1, max=32000)
 _POS_HALF_ANGLE = SimParameterType(float, unit='°', min=0, max=180)
+_WINDOW = SimParameterType(str, choices=[x.name for x in SUPPORTED_WINDOWS])
+_WINDOW_PARAM = SimParameterType(float)
+
 
 # ... to make a list of all changeable parameters here.
 SAR_SIM_PARAMETERS = (
@@ -46,6 +50,9 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_POS_HALF_ANGLE, 'azimuth_3db_angle_deg', 'ant_a', 7.5),
     SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5),
 
+    SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', 'Rect'),
+    SimParameter(_WINDOW_PARAM, 'azimuth_compression_window_parameter', 'ac_wnd_param', 0),
+
     SimParameter(_METERS, 'flight_height', 'az_z0', 1.0),
     SimParameter(_METERS, 'flight_distance_to_scene_center', 'r_sc', 4.5),
 
@@ -58,6 +65,8 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_COUNT, 'image_count_y', 'n_y', 501),
 
     SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16),
+    SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', 'Rect'),
+    SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0),
 )
 
 

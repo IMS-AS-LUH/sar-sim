@@ -4,7 +4,7 @@ from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
-    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog
+    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit
 import pyqtgraph as pg
 import numpy as np
 
@@ -301,14 +301,24 @@ class SarGuiMainFrame(QMainWindow):
         if filename:
             self._state = simstate.SarSimParameterState.read_from_file(filename)
 
-        # Update the UI with the new values
-        for param in self._state.get_parameters():
-            spinner = self._param_widgets[param.name]
-            val = self._state.get_value(param)
-            if isinstance(spinner, QDoubleSpinBox):
-                factor = spinner.property('si_factor')
-                val /= factor
-            spinner.setValue(val)
+        self._update_gui_values_from_state()
+
+    def _update_gui_values_from_state(self):
+        for parameter in self._state.get_parameters():
+            if parameter.name not in self._param_widgets:
+                continue
+            box = self._param_widgets[parameter.name]
+            value = self._state.get_value(parameter)
+            if parameter.type.type in [float, int]:
+                factor = box.property('si_factor')
+                box.setValue(value / factor)
+            elif parameter.type.type is str:
+                if isinstance(box, QComboBox):
+                    box.setCurrentText(self._state.get_value(parameter))
+                else:
+                    box.setText(self._state.get_value(parameter))
+            else:
+                raise NotImplementedError("Update routine missing!")
 
     def _save_param_file(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Select parameter file", filter="*.ini")
@@ -341,11 +351,13 @@ class SarGuiMainFrame(QMainWindow):
                 box.setSingleStep(1)
                 if parameter.symbol is not None:
                     box.setPrefix(f'{parameter.symbol} = ')
-                if len(unit) > 0:
+                if unit is not None and len(unit) > 0:
                     box.setSuffix(f' {unit}')
                 box.setProperty('si_factor', factor)
-                box.setMinimum(parameter.type.min / factor)
-                box.setMaximum(parameter.type.max / factor)
+                if parameter.type.min is not None:
+                    box.setMinimum(parameter.type.min / factor)
+                if parameter.type.max is not None:
+                    box.setMaximum(parameter.type.max / factor)
                 box.setValue(self._state.get_value(parameter) / factor)
                 box.valueChanged.connect(lambda v, p=parameter, f=factor: self._state.set_value(p, v*f))
 
@@ -356,12 +368,38 @@ class SarGuiMainFrame(QMainWindow):
                 if parameter.type.unit is not None:
                     box.setSuffix(f' {parameter.type.unit}')
                 box.setProperty('si_factor', 1)
-                box.setMinimum(parameter.type.min)
-                box.setMaximum(parameter.type.max)
+                if parameter.type.min is not None:
+                    box.setMinimum(parameter.type.min)
+                if parameter.type.max is not None:
+                    box.setMaximum(parameter.type.max)
                 box.setValue(self._state.get_value(parameter))
                 box.valueChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
+
+            elif parameter.type.type is str:
+                value = self._state.get_value(parameter)
+                if value is None:
+                    value = ''
+                if parameter.type.choices is not None:
+                    box = QComboBox()
+                    for choice in parameter.type.choices:
+                        box.addItem(choice)
+                    box.setCurrentText(value)
+                    box.currentTextChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
+                else:
+                    box = QLineEdit()
+                    box.setText(value)
+                    box.textChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
+                tool_tip = []
+                if parameter.symbol is not None:
+                    tool_tip.append(f'{parameter.symbol}')
+                if parameter.type.unit is not None:
+                    tool_tip.append(f'[{parameter.type.unit}]')
+                if len(tool_tip) > 0:
+                    box.setToolTip(' '.join(tool_tip))
+
             else:
-                break  # others not supported for now in GUI
+                print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
+                continue  # others not supported for now in GUI
 
             form.addRow(parameter.human_name(), box)
             widgets[parameter.name] = box

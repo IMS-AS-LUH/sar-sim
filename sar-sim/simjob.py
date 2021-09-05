@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 import scipy.signal as signal
+from . import operations
 
 CUDA_NUMBA_AVAILABLE = True
 
@@ -91,7 +92,8 @@ def run_sim(state: simstate.SarSimParameterState,
     progress_callback(.25, 'Range Compression')
     timestamper.tic('Range Compression')
     # wnd = signal.hann(M=len(fmcw_lines[0]), sym=False)
-    wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
+    # wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
+    wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
     #nfft = 16 * 1024  # len(fmcw_lines[0])
     print(f'Range-FFT: Have {len(wnd)} samples, minimum oversampling: {state.range_compression_fft_min_oversample:.3f}x')
     nfft = state.range_compression_fft_min_oversample * len(fmcw_lines[0])
@@ -108,6 +110,9 @@ def run_sim(state: simstate.SarSimParameterState,
     timestamper.tic('Azimuth Compression')
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
+
+    ac_wnd = operations.create_window(state.azimuth_compression_window, state.azimuth_compression_window_parameter,
+                                   len(fmcw_lines), False)
 
     print(
         f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
@@ -142,6 +147,7 @@ def run_sim(state: simstate.SarSimParameterState,
             y = image_y[iy]
             for ia in range(0, na):
                 flight_point = flight_path_array[ia]
+                a = ac_wnd[ia]
 
                 delta_x = x - flight_point[0]
                 delta_y = y - flight_point[1]
@@ -158,7 +164,7 @@ def run_sim(state: simstate.SarSimParameterState,
                 else:
                     sample_int = int(sample_int)
                     sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][sample_int + 1] * sample_frac
-                temp = temp + sample * cmath.exp(complex(0, pc))
+                temp = temp + sample * cmath.exp(complex(0, pc)) * a
             image[ix][iy] = temp
 
         blocksize = (16, 16)
@@ -169,6 +175,7 @@ def run_sim(state: simstate.SarSimParameterState,
     else:
         for ia in range(len(flight_path)):
             flight_point = flight_path[ia]
+            a = ac_wnd[ia]
             for ix in range(len(image_x)):
                 x = image_x[ix]
                 for iy in range(len(image_y)):
@@ -188,7 +195,7 @@ def run_sim(state: simstate.SarSimParameterState,
                         sample_int = int(sample_int)
                         sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][
                             sample_int + 1] * sample_frac
-                    image[ix][iy] = image[ix][iy] + sample * cmath.exp(complex(0, pc))
+                    image[ix][iy] = image[ix][iy] + sample * cmath.exp(complex(0, pc)) * a
 
     timestamper.toc()
     progress_callback(1, 'Finished')
