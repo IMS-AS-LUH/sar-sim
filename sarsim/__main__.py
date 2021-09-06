@@ -2,7 +2,7 @@ import argparse
 import sys
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='IMS SAR Simulator', prog='python3 -m sar-sim')
+    parser = argparse.ArgumentParser(description='IMS SAR Simulator', prog='python3 -m sarsim')
 
     parser.add_argument('--gui', action='store_true', help='run an interactive GUI based on PyQt')
     parser.add_argument('--write-stubs', action='store_true', help='create stub files for bedder IDE autocompletion')

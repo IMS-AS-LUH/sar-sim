@@ -12,6 +12,7 @@ from . import simstate
 from . import siunits
 from . import simjob
 from . import profiling
+from . import sardata
 
 
 class SarGuiPlotSubWindow(QMdiSubWindow):
@@ -235,6 +236,7 @@ class SarGuiSimWorker(QObject):
     finished = pyqtSignal(dict)
     progress = pyqtSignal(float, str)
     sim_state: simstate.SarSimParameterState = None
+    loaded_data: sardata.SarData = None
 
     def run(self):
         ts = profiling.TimeStamper()
@@ -242,7 +244,7 @@ class SarGuiSimWorker(QObject):
         def cb(p, m):
             self.progress.emit(p, m)
 
-        images = simjob.run_sim(self.sim_state, ts, cb)
+        images = simjob.run_sim(self.sim_state, ts, cb, self.loaded_data)
         self.finished.emit(images)
 
 
@@ -251,6 +253,9 @@ class SarGuiMainFrame(QMainWindow):
         super().__init__()
 
         self._state = simstate.create_state()
+
+        self._loaded_data = None  # sardata.SarData
+        self._use_loaded_data: bool = False
 
         self._create_menu()
         self._param_widgets = self._create_parameter_dock()
@@ -289,6 +294,8 @@ class SarGuiMainFrame(QMainWindow):
         file = bar.addMenu('&File')
         file.addAction('Load parameters').triggered.connect(self._load_param_file)
         file.addAction('Save parameters').triggered.connect(self._save_param_file)
+        file.addAction('Load demo capture').triggered.connect(self._load_demo_capture)
+        file.addAction('Unload demo capture').triggered.connect(self._unload_demo_capture)
         file.addAction('E&xit').triggered.connect(lambda: self.close())
 
         view = bar.addMenu('&View')
@@ -302,6 +309,27 @@ class SarGuiMainFrame(QMainWindow):
             self._state = simstate.SarSimParameterState.read_from_file(filename)
 
         self._update_gui_values_from_state()
+
+    def _load_demo_capture(self):
+        dirname = QFileDialog.getExistingDirectory(self, "Select captured \".sardata\" directory",
+                                                   options=QFileDialog.ShowDirsOnly | QFileDialog.ReadOnly)
+        if dirname:
+            print(dirname)
+            sd = sardata.SarData.import_from_directory(dirname)
+            self._state = sd.sim_state
+            self._use_loaded_data = True
+            self._loaded_data = sd
+            self._label_loaded_dataset.setText(sd.name)
+
+            print(f'Loaded SarData from: {dirname}')
+            print(f'Raw FMCW: {len(sd.fmcw_lines)} lines of {len(sd.fmcw_lines[0])} samples')
+
+        self._update_gui_values_from_state()
+
+    def _unload_demo_capture(self):
+        self._use_loaded_data = False
+        self._loaded_data = None
+        self._label_loaded_dataset.setText('(none)')
 
     def _update_gui_values_from_state(self):
         for parameter in self._state.get_parameters():
@@ -412,6 +440,10 @@ class SarGuiMainFrame(QMainWindow):
         btn.clicked.connect(self._autorange_plots)
         form.addRow('Auto Range Plots', btn)
 
+        lbl = QLabel('(none)')
+        form.addRow('Using External Dataset', lbl)
+        self._label_loaded_dataset = lbl
+
         widget = QWidget(self)
         widget.setLayout(form)
         scroll = QScrollArea(self)
@@ -479,6 +511,10 @@ class SarGuiMainFrame(QMainWindow):
         print('GUI: Starting Simulation in Thread')
         self._create_worker()
         self._worker.sim_state = self._state
+        if self._use_loaded_data:
+            self._worker.loaded_data = self._loaded_data
+        else:
+            self._worker.loaded_data = None
         self._plot_window_raw.mark_stale(True)
         self._plot_window_rc.mark_stale(True)
         self._plot_window_ac.mark_stale(True)
@@ -512,7 +548,7 @@ def run_gui():
     pg.setConfigOptions(imageAxisOrder='row-major')
 
     app: QApplication = pg.mkQApp()
-    app.setApplicationName('sar-sim')
+    app.setApplicationName('sarsim')
     app.setApplicationDisplayName('SAR-Sim GUI')
     app.setOrganizationName('IMS')
 

@@ -4,6 +4,7 @@ import math
 import numpy as np
 import scipy.signal as signal
 from . import operations
+from . import sardata
 
 CUDA_NUMBA_AVAILABLE = True
 
@@ -18,9 +19,11 @@ from . import simstate, profiling
 
 def run_sim(state: simstate.SarSimParameterState,
             timestamper:profiling.TimeStamper = None,
-            progress_callback: callable = None):
+            progress_callback: callable = None,
+            loaded_data: sardata.SarData = None):
     timestamper = timestamper or profiling.TimeStamper()
     ac_use_cuda = CUDA_NUMBA_AVAILABLE
+    use_loaded_data = loaded_data is not None
 
     progress_callback = progress_callback or (lambda _0, _1: None)
     progress_callback(0, 'Preparing Simulation')
@@ -61,10 +64,14 @@ def run_sim(state: simstate.SarSimParameterState,
         f'Azimuth: {state.azimuth_count} Positions spaced {azimuth_x[1] - azimuth_x[0]}m yield {azimuth_x[-1] - azimuth_x[0]}m Track.')
 
     # Optimal flight path 3D [state.azimuth_count, 3]
-    flight_path = np.array([
-        [x, -state.flight_distance_to_scene_center, state.flight_height]
-        for x in azimuth_x
-    ])
+    flight_path = None
+    if use_loaded_data:
+        flight_path = loaded_data.flight_path
+    else:
+        flight_path = np.array([
+            [x, -state.flight_distance_to_scene_center, state.flight_height]
+            for x in azimuth_x
+        ])
 
     # FMCW Simulation
     fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)
@@ -74,26 +81,41 @@ def run_sim(state: simstate.SarSimParameterState,
     fmcw_t = np.array([float(i) / state.fmcw_adc_frequency for i in range(fmcw_samples)])
 
     timestamper.toc()
-    progress_callback(.05, 'FMCW Simulation')
+    fmcw_lines = None
+    if use_loaded_data:
+        progress_callback(.05, 'Using loaded FMCW Data')
+        fmcw_lines = loaded_data.fmcw_lines
+    else:
+        progress_callback(.05, 'FMCW Simulation')
 
-    print(f'FMCW: {state.fmcw_start_frequency * 1e-9:.1f} GHz to {state.fmcw_stop_frequency * 1e-9:.1f} GHz '
-          f'yields {fmcw_bw * 1e-9:.1f} GHz Bandwidth of {"up" if fmcw_up else "down"}-Ramp.')
+        print(f'FMCW: {state.fmcw_start_frequency * 1e-9:.1f} GHz to {state.fmcw_stop_frequency * 1e-9:.1f} GHz '
+              f'yields {fmcw_bw * 1e-9:.1f} GHz Bandwidth of {"up" if fmcw_up else "down"}-Ramp.')
 
-    print(f'FMCW: {state.fmcw_ramp_duration * 1e3:.1f} ms Ramp-Time at {state.fmcw_adc_frequency * 1e-3:.1f} kHz '
-          f'yields {fmcw_samples:d} samples.')
+        print(f'FMCW: {state.fmcw_ramp_duration * 1e3:.1f} ms Ramp-Time at {state.fmcw_adc_frequency * 1e-3:.1f} kHz '
+              f'yields {fmcw_samples:d} samples.')
 
-    timestamper.tic('FMCW Simulation')
+        timestamper.tic('FMCW Simulation')
 
-    fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
 
-    timestamper.toc()
+        timestamper.toc()
 
     ## Range Compression
     progress_callback(.25, 'Range Compression')
     timestamper.tic('Range Compression')
     # wnd = signal.hann(M=len(fmcw_lines[0]), sym=False)
     # wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
-    wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
+
+    rc_used_bandwidth = state.range_compression_used_bandwidth / 100
+    if rc_used_bandwidth >= 0.99999999:
+        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
+    else:
+        original_length = len(fmcw_lines[0])
+        used_part = round(rc_used_bandwidth*original_length)
+        used_offset = math.floor((original_length-used_part)/2)
+        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, used_part, False)
+        wnd = np.pad(wnd, (used_offset, original_length-used_part-used_offset), 'constant', constant_values=(0, 0))
+
     #nfft = 16 * 1024  # len(fmcw_lines[0])
     print(f'Range-FFT: Have {len(wnd)} samples, minimum oversampling: {state.range_compression_fft_min_oversample:.3f}x')
     nfft = state.range_compression_fft_min_oversample * len(fmcw_lines[0])
