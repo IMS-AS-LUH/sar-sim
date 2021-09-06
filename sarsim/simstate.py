@@ -117,6 +117,9 @@ class SarSimParameterState(object):
         state = SarSimParameterState()
 
         for param in SarSimParameterState.get_parameters():
+            if param.name not in cfg['params']:
+                print(f'Load Parameter Note: Using default for {param.name}: {state.get_value(param)}')
+                continue
             if param.type.type == int:
                 val = cfg['params'].getint(param.name)
             elif param.type.type == float:
