@@ -321,6 +321,9 @@ class SarGuiMainFrame(QMainWindow):
                                                   start_x=_spacing*(1-_count)/2,
                                                   start_y=_spacing*(1-_count)/2)))
 
+        export = bar.addMenu('&Export')
+        export.addAction('Azimuth compressed as PNG').triggered.connect(self._export_png)
+
     def set_scene(self, scene: simscene.SimulationScene):
         self._scene = scene
 
@@ -351,6 +354,27 @@ class SarGuiMainFrame(QMainWindow):
         self._use_loaded_data = False
         self._loaded_data = None
         self._label_loaded_dataset.setText('(none)')
+
+    def _export_png(self):
+        if self._plot_window_ac._data is None:
+            return
+
+        levels = self._plot_window_ac._hist.getLevels()
+        suggested_name = f"export_{round(levels[1])}dB_to_{round(levels[0])}dB.png"
+
+        filename, _ = QFileDialog.getSaveFileName(self, "Select image file", suggested_name, filter="*.png")
+        if filename:
+            if not filename.endswith(".png"):
+                filename = filename + ".png"
+        
+        import PIL.Image
+        #TODO: Apply colormap
+        data = self._plot_window_ac._data
+        data += -levels[0] #HACK
+
+        image = PIL.Image.fromarray(data)
+        image = image.convert('RGB')
+        image.save(filename)
 
     def _update_gui_values_from_state(self):
         for parameter in self._state.get_parameters():
