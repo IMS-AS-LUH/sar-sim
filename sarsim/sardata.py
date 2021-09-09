@@ -45,7 +45,7 @@ class SarData(object):
         # Note: azimuth_speed_limit not used YET - TODO: Add when we introduce velocity
         sim.azimuth_count = cfg['params'].getint('azimuth_count')
 
-        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit')
+        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
 
         # Guessed somewhat, TODO: Qualify sensible settings
         sim.azimuth_compression_window = 'Blackman'
@@ -53,7 +53,7 @@ class SarData(object):
         sim.range_compression_window_parameter = 0.25
 
         # *** Decode Flightpath ***
-        img_offset_z = cfg['params'].getfloat('gbp_image_z')
+        img_offset_z = cfg['params'].getfloat('gbp_image_z', fallback=-0.05)
         transposed_flight_path = np.array([
             [float(x) for x in str(cfg['fpath']['x']).split(',')],
             [float(x) for x in str(cfg['fpath']['y']).split(',')],
@@ -66,7 +66,7 @@ class SarData(object):
         self.flight_path = np.array(transposed_flight_path).transpose()
 
         # *** Calculate derived parameters ***
-        image_region = str(cfg['params']['gbp_image_region'])
+        image_region = cfg['params'].get('gbp_image_region', fallback='(0.25, 0.5, 2.75, 3.0)')
         if image_region[0] != '(' or image_region[-1] != ')':
             raise Exception("Invalid tuple in config file")
         image_region = image_region[1:-1].split(',')
@@ -80,7 +80,7 @@ class SarData(object):
         sim.image_stop_x = image_region[2]
         sim.image_stop_y = image_region[3]
 
-        sim.image_count_x = cfg['params'].getint('gbp_image_pixels_range')
+        sim.image_count_x = cfg['params'].getint('gbp_image_pixels_range', fallback=1024)
         sim.image_count_y = round(sim.image_count_x *
                                   (image_region[2] - image_region[0]) /
                                   (image_region[3] - image_region[1])
@@ -97,7 +97,7 @@ class SarData(object):
         sim.flight_height = faz
         sim.flight_distance_to_scene_center = math.sqrt((fax-icx)**2 + (fay-icy)**2)
         sim.range_compression_fft_min_oversample = math.floor(
-            cfg['params'].getint('range_compression_nfft') /
+            cfg['params'].getint('range_compression_nfft', fallback=32768) /
             (sim.fmcw_ramp_duration * sim.fmcw_adc_frequency)
         )
 
