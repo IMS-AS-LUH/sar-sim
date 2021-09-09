@@ -13,6 +13,7 @@ from . import siunits
 from . import simjob
 from . import profiling
 from . import sardata
+from . import simscene
 
 
 class SarGuiPlotSubWindow(QMdiSubWindow):
@@ -237,6 +238,7 @@ class SarGuiSimWorker(QObject):
     progress = pyqtSignal(float, str)
     sim_state: simstate.SarSimParameterState = None
     loaded_data: sardata.SarData = None
+    sim_scene: simscene.SimulationScene = None
 
     def run(self):
         ts = profiling.TimeStamper()
@@ -244,7 +246,7 @@ class SarGuiSimWorker(QObject):
         def cb(p, m):
             self.progress.emit(p, m)
 
-        images = simjob.run_sim(self.sim_state, ts, cb, self.loaded_data)
+        images = simjob.run_sim(self.sim_state, self.sim_scene, ts, cb, self.loaded_data)
         self.finished.emit(images)
 
 
@@ -253,6 +255,7 @@ class SarGuiMainFrame(QMainWindow):
         super().__init__()
 
         self._state = simstate.create_state()
+        self._scene = simscene.create_default_scene()
 
         self._loaded_data = None  # sardata.SarData
         self._use_loaded_data: bool = False
@@ -302,6 +305,24 @@ class SarGuiMainFrame(QMainWindow):
         view.addAction('&Tiled').triggered.connect(lambda: self.mdi.tileSubWindows())
         view.addAction('&Cascade').triggered.connect(lambda: self.mdi.cascadeSubWindows())
         view.addAction('&Maximized').triggered.connect(lambda: self.mdi.currentSubWindow().showMaximized())
+
+        _spacing = 0.0375*4
+        _count = 3
+        scenes = bar.addMenu('&Scenes')
+        scenes.addAction('Single Reflector at 0,0').triggered.connect(lambda: self.set_scene(
+            simscene.create_default_scene()))
+        scenes.addAction('Reflector Row in X').triggered.connect(lambda: self.set_scene(
+            simscene.create_reflector_array_scene(count_x=_count, spacing_x=_spacing)))
+        scenes.addAction('Reflector Row in Y').triggered.connect(lambda: self.set_scene(
+            simscene.create_reflector_array_scene(count_y=_count, spacing_y=_spacing)))
+        scenes.addAction('Reflector Grid arount center').triggered.connect(lambda: self.set_scene(
+            simscene.create_reflector_array_scene(count_x=_count, count_y=_count,
+                                                  spacing_x=_spacing, spacing_y=_spacing,
+                                                  start_x=_spacing*(1-_count)/2,
+                                                  start_y=_spacing*(1-_count)/2)))
+
+    def set_scene(self, scene: simscene.SimulationScene):
+        self._scene = scene
 
     def _load_param_file(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Select parameter file", filter="*.ini")
@@ -511,6 +532,7 @@ class SarGuiMainFrame(QMainWindow):
         print('GUI: Starting Simulation in Thread')
         self._create_worker()
         self._worker.sim_state = self._state
+        self._worker.sim_scene = self._scene
         if self._use_loaded_data:
             self._worker.loaded_data = self._loaded_data
         else:

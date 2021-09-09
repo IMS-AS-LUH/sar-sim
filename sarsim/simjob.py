@@ -5,6 +5,7 @@ import numpy as np
 import scipy.signal as signal
 from . import operations
 from . import sardata
+from . import simscene
 
 CUDA_NUMBA_AVAILABLE = True
 
@@ -18,6 +19,7 @@ from . import simstate, profiling
 
 
 def run_sim(state: simstate.SarSimParameterState,
+            scene: simscene.SimulationScene,
             timestamper:profiling.TimeStamper = None,
             progress_callback: callable = None,
             loaded_data: sardata.SarData = None):
@@ -43,13 +45,6 @@ def run_sim(state: simstate.SarSimParameterState,
 
     #state.flight_height: float
     #state.flight_distance_to_scene_center: float
-
-    # Reflectors, List (x,y,z, amplitude)
-    reflectors = [
-        (0, 0, 0, 1),
-        (0, 0.5, 0, 1),
-        (0, -0.5, 0, 1),
-    ]
 
     # Environmental Constants
     signal_speed = 2.99709e8
@@ -96,7 +91,7 @@ def run_sim(state: simstate.SarSimParameterState,
 
         timestamper.tic('FMCW Simulation')
 
-        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
 
         timestamper.toc()
 
@@ -232,12 +227,13 @@ def run_sim(state: simstate.SarSimParameterState,
 
 _fmcw_cache = {}
 
-def _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, fmcw_start_frequency, fmcw_slope, fmcw_t, azimuth_3db_angle_deg):
+def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal_speed, fmcw_start_frequency, fmcw_slope, fmcw_t, azimuth_3db_angle_deg):
     # We cache repeating call with identical parameters to speed up the simulation
+    # TODO: Make this actually hashing sensibly for caching!
     cache_key = (
         hash(flight_path.data.tobytes()),
         fmcw_samples,
-        tuple(reflectors),
+        hash(scene),
         signal_speed,
         fmcw_start_frequency,
         fmcw_slope,
@@ -261,10 +257,10 @@ def _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, fmcw_start_fr
 
     for flight_point in flight_path:
         fmcw_line = np.array([0] * fmcw_samples)
-        for reflector in reflectors:
-            delta_vector_x = reflector[0] - flight_point[0]
-            delta_vector_y = reflector[1] - flight_point[1]
-            delta_vector_z = reflector[2] - flight_point[2]
+        for reflector in scene.get_simple_reflectors():
+            delta_vector_x = reflector.x - flight_point[0]
+            delta_vector_y = reflector.y - flight_point[1]
+            delta_vector_z = reflector.z - flight_point[2]
             delta_r = math.sqrt(delta_vector_x**2 +delta_vector_y**2 +delta_vector_z**2)
             delta_t = 2 * delta_r / signal_speed
 
@@ -272,7 +268,7 @@ def _fmcw_sim(flight_path, fmcw_samples, reflectors, signal_speed, fmcw_start_fr
             b = (2 * math.pi * fmcw_start_frequency * delta_t) - (math.pi * fmcw_slope * delta_t * delta_t)
             # c is the angular frequency term
             c = 2 * math.pi * fmcw_slope * delta_t
-            a = 0.5 * reflector[3]
+            a = 0.5 * reflector.amplitude
 
             # Apply antenna diagram
             azimuth_angle = math.atan2(delta_vector_x, delta_vector_y)
