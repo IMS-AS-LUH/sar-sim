@@ -367,14 +367,7 @@ class SarGuiMainFrame(QMainWindow):
             if not filename.endswith(".png"):
                 filename = filename + ".png"
         
-        import PIL.Image
-        #TODO: Apply colormap
-        data = self._plot_window_ac._data
-        data += -levels[0] #HACK
-
-        image = PIL.Image.fromarray(data)
-        image = image.convert('RGB')
-        image.save(filename)
+        self._plot_window_ac._img.save(filename)
 
     def _update_gui_values_from_state(self):
         for parameter in self._state.get_parameters():
