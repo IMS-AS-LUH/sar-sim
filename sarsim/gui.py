@@ -367,7 +367,8 @@ class SarGuiMainFrame(QMainWindow):
             if not filename.endswith(".png"):
                 filename = filename + ".png"
         
-        self._plot_window_ac._img.save(filename)
+        # for some reason we need to flip the image, otherwise the exported image does not look like the graph
+        self._plot_window_ac._img.qimage.mirrored(horizontal=False, vertical=True).save(filename)
 
     def _update_gui_values_from_state(self):
         for parameter in self._state.get_parameters():
