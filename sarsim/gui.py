@@ -4,7 +4,7 @@ from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
-    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit
+    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit, QBoxLayout
 import pyqtgraph as pg
 import numpy as np
 
@@ -28,8 +28,8 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
 
         if aspect_lock:
             self._p1.setAspectLocked()
-        self._p1.setLabel('left', 'Azimuth', unit_x)
-        self._p1.setLabel('bottom', 'Range', unit_y)
+        self._p1.setLabel('left', 'Azimuth / X', unit_x)
+        self._p1.setLabel('bottom', 'Range / Y', unit_y)
         self._unit_x = unit_x
         self._unit_y = unit_y
 
@@ -291,6 +291,7 @@ class SarGuiMainFrame(QMainWindow):
 
         # Default view
         self.mdi.tileSubWindows()
+        self.showMaximized()
 
     def _create_menu(self):
         bar = self.menuBar()
@@ -311,9 +312,9 @@ class SarGuiMainFrame(QMainWindow):
         scenes = bar.addMenu('&Scenes')
         scenes.addAction('Single Reflector at 0,0').triggered.connect(lambda: self.set_scene(
             simscene.create_default_scene()))
-        scenes.addAction('Reflector Row in X').triggered.connect(lambda: self.set_scene(
+        scenes.addAction('Reflector Row in Azimuth').triggered.connect(lambda: self.set_scene(
             simscene.create_reflector_array_scene(count_x=_count, spacing_x=_spacing)))
-        scenes.addAction('Reflector Row in Y').triggered.connect(lambda: self.set_scene(
+        scenes.addAction('Reflector Row in Range').triggered.connect(lambda: self.set_scene(
             simscene.create_reflector_array_scene(count_y=_count, spacing_y=_spacing)))
         scenes.addAction('Reflector Grid arount center').triggered.connect(lambda: self.set_scene(
             simscene.create_reflector_array_scene(count_x=_count, count_y=_count,
@@ -382,6 +383,8 @@ class SarGuiMainFrame(QMainWindow):
     def _create_parameter_dock(self):
         dock = QDockWidget("Parameters", self)
         dock.setFeatures(QDockWidget.DockWidgetFloatable|QDockWidget.DockWidgetMovable)
+
+        stack = QBoxLayout(QBoxLayout.Direction.TopToBottom)
 
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapAllRows)
@@ -453,6 +456,16 @@ class SarGuiMainFrame(QMainWindow):
             form.addRow(parameter.human_name(), box)
             widgets[parameter.name] = box
 
+        widget = QWidget(self)
+        widget.setLayout(form)
+        scroll = QScrollArea(self)
+        scroll.setWidget(widget)
+
+        stack.addWidget(scroll)
+
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+
         btn = QPushButton('RUN SIM')
         btn.clicked.connect(self._rerun_sim)
         form.addRow('Start Simulation', btn)
@@ -464,15 +477,20 @@ class SarGuiMainFrame(QMainWindow):
         lbl = QLabel('(none)')
         form.addRow('Using External Dataset', lbl)
         self._label_loaded_dataset = lbl
-
+        
         widget = QWidget(self)
         widget.setLayout(form)
-        scroll = QScrollArea(self)
-        scroll.setWidget(widget)
-        dock.setWidget(scroll)
+        
+        stack.addWidget(widget)
+
+        widget = QWidget(self)
+        widget.setLayout(stack)
+        dock.setWidget(widget)
 
         self._parameter_dock = dock
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.resizeDocks([dock], [305], QtCore.Qt.Orientation.Horizontal)
+        
 
         return widgets
 
