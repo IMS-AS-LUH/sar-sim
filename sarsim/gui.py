@@ -1,12 +1,13 @@
 import typing
 
 from PyQt5 import QtCore, QtGui
-from PyQt5.Qt import Qt
+from PyQt5.Qt import Qt, QPixmap, QIcon
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
     QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit
 import pyqtgraph as pg
 import numpy as np
+import functools
 
 from . import simstate
 from . import siunits
@@ -14,6 +15,30 @@ from . import simjob
 from . import profiling
 from . import sardata
 from . import simscene
+
+
+# Patch in the "jet" colormap used in the demo etc.
+pg.graphicsItems.GradientEditorItem.Gradients['jet'] = {
+    'ticks': [(0.0 / 63, (0, 0, 144)), (7.0 / 63, (0, 0, 255)), (23.0 / 63, (0, 255, 255)), (39.0 / 63, (255, 255, 0)),
+              (55.0 / 63, (255, 0, 0)), (63.0 / 63, (127, 0, 0))], 'mode': 'rgb'}
+pg.graphicsItems.GradientEditorItem.Gradients['paperjet'] = {
+    'ticks': [
+        (0.0 / 63, (0, 0, 26)),
+        (7.0 / 63, (0, 0, 53)),
+        (23.0 / 63, (0, 117, 117)),
+        (39.0 / 63, (149, 149, 0)),
+        (55.0 / 63, (229, 0, 0)),
+        (63.0 / 63, (255, 229, 229))
+    ], 'mode': 'rgb'}
+pg.graphicsItems.GradientEditorItem.Gradients['invpaperjet'] = {
+    'ticks': [
+        (0.00, (214, 205, 255)),
+        (0.11, (163, 186, 248)),
+        (0.37, (0, 202, 202)),
+        (0.62, (152, 152, 0)),
+        (0.87, (111, 0, 0)),
+        (1.00, (75, 25, 25)),
+    ], 'mode': 'rgb'}
 
 
 class SarGuiPlotSubWindow(QMdiSubWindow):
@@ -118,9 +143,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         else:
             self._iso = None
             self._iso2 = None
-
-        # Patch in the "jet" colormap used in the demo etc.
-        pg.graphicsItems.GradientEditorItem.Gradients['jet'] = {'ticks' :[(0.0 / 63, (0, 0, 144)), (7.0 / 63, (0, 0, 255)), (23.0 / 63, (0, 255, 255)), (39.0 / 63, (255, 255, 0)), (55.0 / 63, (255, 0, 0)), (63.0 / 63, (127, 0, 0))], 'mode': 'rgb'}
 
         # Contrast/color control
         self._hist = pg.HistogramLUTItem()
@@ -232,6 +254,9 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         else:
             self._layout.setBackground(SarGuiPlotSubWindow.BG_NORMAL)
 
+    def set_color_preset(self, preset: str = 'jet'):
+        self._hist.gradient.loadPreset(preset)  # spectrum, viridis
+
 
 class SarGuiSimWorker(QObject):
     finished = pyqtSignal(dict)
@@ -259,6 +284,8 @@ class SarGuiMainFrame(QMainWindow):
 
         self._loaded_data = None  # sardata.SarData
         self._use_loaded_data: bool = False
+
+        self._color_preset = 'jet'
 
         self._create_menu()
         self._param_widgets = self._create_parameter_dock()
@@ -320,9 +347,39 @@ class SarGuiMainFrame(QMainWindow):
                                                   spacing_x=_spacing, spacing_y=_spacing,
                                                   start_x=_spacing*(1-_count)/2,
                                                   start_y=_spacing*(1-_count)/2)))
+        colors = bar.addMenu('&Colors')
+        self._color_preset_menu_children = {}
+        icon_size = 64
+        # For icon painting, see pyqtgraph/graphicsItems/GradientEditorItem.py:460 and following
+        temp_gradient_editor = pg.GradientEditorItem()
+        temp_gradient_editor.length = icon_size
+        for preset in pg.graphicsItems.GradientEditorItem.Gradients.keys():
+            action = colors.addAction(preset)
+            action.triggered.connect(functools.partial(self.set_color_preset, preset))
+            action.setCheckable(True)
+            action.setChecked(preset == self._color_preset)
+            # Make Preview
+            temp_gradient_editor.loadPreset(preset)
+            pixmap = QtGui.QPixmap(icon_size, icon_size)
+            painter = QtGui.QPainter(pixmap)
+            gradient = temp_gradient_editor.getGradient()
+            brush = QtGui.QBrush(gradient)
+            painter.fillRect(QtCore.QRect(0, 0, icon_size, icon_size), brush)
+            painter.end()
+            action.setIcon(QIcon(pixmap))
+            self._color_preset_menu_children[preset] = action
 
     def set_scene(self, scene: simscene.SimulationScene):
         self._scene = scene
+
+    def set_color_preset(self, preset: str):
+        for p, a in self._color_preset_menu_children.items():
+            a.setChecked(p == preset)
+        self._color_preset = preset
+        self._plot_window_raw.set_color_preset(self._color_preset)
+        self._plot_window_rc.set_color_preset(self._color_preset)
+        self._plot_window_ac.set_color_preset(self._color_preset)
+        pass
 
     def _load_param_file(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Select parameter file", filter="*.ini")
