@@ -1,4 +1,4 @@
-import typing
+from typing import Tuple
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
@@ -354,6 +354,97 @@ class SarGuiSimWorker(QObject):
         self.finished.emit(images)
 
 
+class SarGuiParameterDock():
+    def __init__(self, state: simstate.SarSimParameterState):
+        self.form = QFormLayout()
+        self.form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+
+        self.widgets = {} # Save all widget in a dict, so that we can update them from update_from_state()
+
+        for parameter in state.get_parameters():
+            box = None
+            if parameter.type.type is float:
+                factor, unit = siunits.choose_si_scale(
+                    parameter.default or state.get_value(parameter),
+                    parameter.type.unit)
+                box = QDoubleSpinBox()
+                box.setDecimals(3)
+                box.setSingleStep(1)
+                if parameter.symbol is not None:
+                    box.setPrefix(f'{parameter.symbol} = ')
+                if unit is not None and len(unit) > 0:
+                    box.setSuffix(f' {unit}')
+                box.setProperty('si_factor', factor)
+                if parameter.type.min is not None:
+                    box.setMinimum(parameter.type.min / factor)
+                if parameter.type.max is not None:
+                    box.setMaximum(parameter.type.max / factor)
+                box.setValue(state.get_value(parameter) / factor)
+                box.valueChanged.connect(lambda v, p=parameter, f=factor: state.set_value(p, v*f))
+
+            elif parameter.type.type is int:
+                box = QSpinBox()
+                if parameter.symbol is not None:
+                    box.setPrefix(f'{parameter.symbol} = ')
+                if parameter.type.unit is not None:
+                    box.setSuffix(f' {parameter.type.unit}')
+                box.setProperty('si_factor', 1)
+                if parameter.type.min is not None:
+                    box.setMinimum(parameter.type.min)
+                if parameter.type.max is not None:
+                    box.setMaximum(parameter.type.max)
+                box.setValue(state.get_value(parameter))
+                box.valueChanged.connect(lambda v, p=parameter: state.set_value(p, v))
+
+            elif parameter.type.type is str:
+                value = state.get_value(parameter)
+                if value is None:
+                    value = ''
+                if parameter.type.choices is not None:
+                    box = QComboBox()
+                    for choice in parameter.type.choices:
+                        box.addItem(choice)
+                    box.setCurrentText(value)
+                    box.currentTextChanged.connect(lambda v, p=parameter: state.set_value(p, v))
+                else:
+                    box = QLineEdit()
+                    box.setText(value)
+                    box.textChanged.connect(lambda v, p=parameter: state.set_value(p, v))
+                tool_tip = []
+                if parameter.symbol is not None:
+                    tool_tip.append(f'{parameter.symbol}')
+                if parameter.type.unit is not None:
+                    tool_tip.append(f'[{parameter.type.unit}]')
+                if len(tool_tip) > 0:
+                    box.setToolTip(' '.join(tool_tip))
+
+            else:
+                print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
+                continue  # others not supported for now in GUI
+
+            self.form.addRow(parameter.human_name(), box)
+            self.widgets[parameter.name] = box
+
+    def get_layout(self) -> QFormLayout:
+        return self.form
+
+    def update_from_state(self, state: simstate.SarSimParameterState) -> None:
+        for parameter in state.get_parameters():
+            if parameter.name not in self.widgets:
+                continue
+            box = self.widgets[parameter.name]
+            value = state.get_value(parameter)
+            if parameter.type.type in [float, int]:
+                factor = box.property('si_factor')
+                box.setValue(value / factor)
+            elif parameter.type.type is str:
+                if isinstance(box, QComboBox):
+                    box.setCurrentText(state.get_value(parameter))
+                else:
+                    box.setText(state.get_value(parameter))
+            else:
+                raise NotImplementedError("Update routine missing!")
+
 class SarGuiMainFrame(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -367,7 +458,7 @@ class SarGuiMainFrame(QMainWindow):
         self._color_preset = 'jet'
 
         self._create_menu()
-        self._param_widgets = self._create_parameter_dock()
+        self._params_control = self._create_parameter_dock()
 
         self._create_mdi()
         self._create_status_bar()
@@ -513,21 +604,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_ac._img.qimage.mirrored(horizontal=False, vertical=True).save(filename)
 
     def _update_gui_values_from_state(self):
-        for parameter in self._state.get_parameters():
-            if parameter.name not in self._param_widgets:
-                continue
-            box = self._param_widgets[parameter.name]
-            value = self._state.get_value(parameter)
-            if parameter.type.type in [float, int]:
-                factor = box.property('si_factor')
-                box.setValue(value / factor)
-            elif parameter.type.type is str:
-                if isinstance(box, QComboBox):
-                    box.setCurrentText(self._state.get_value(parameter))
-                else:
-                    box.setText(self._state.get_value(parameter))
-            else:
-                raise NotImplementedError("Update routine missing!")
+        self._params_control.update_from_state(self._state)
 
     def _save_param_file(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Select parameter file", filter="*.ini")
@@ -536,8 +613,8 @@ class SarGuiMainFrame(QMainWindow):
                 filename = filename + ".ini"
             self._state.write_to_file(filename)
 
-    def on_parameter_spinbox_change(self, symbol: str, value: float):
-        print(f'{symbol} = {value}')
+    # def on_parameter_spinbox_change(self, symbol: str, value: float):
+    #     print(f'{symbol} = {value}')
 
     def _create_parameter_dock(self):
         dock = QDockWidget("Parameters", self)
@@ -545,78 +622,10 @@ class SarGuiMainFrame(QMainWindow):
 
         stack = QBoxLayout(QBoxLayout.Direction.TopToBottom)
 
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapAllRows)
-
-        widgets = {} # Save all widget in a dict, so that we can update them from _load_param_file()
-        # TODO: Refactor this into a class?
-
-        for parameter in self._state.get_parameters():
-            box = None
-            if parameter.type.type is float:
-                factor, unit = siunits.choose_si_scale(
-                    parameter.default or self._state.get_value(parameter),
-                    parameter.type.unit)
-                box = QDoubleSpinBox()
-                box.setDecimals(3)
-                box.setSingleStep(1)
-                if parameter.symbol is not None:
-                    box.setPrefix(f'{parameter.symbol} = ')
-                if unit is not None and len(unit) > 0:
-                    box.setSuffix(f' {unit}')
-                box.setProperty('si_factor', factor)
-                if parameter.type.min is not None:
-                    box.setMinimum(parameter.type.min / factor)
-                if parameter.type.max is not None:
-                    box.setMaximum(parameter.type.max / factor)
-                box.setValue(self._state.get_value(parameter) / factor)
-                box.valueChanged.connect(lambda v, p=parameter, f=factor: self._state.set_value(p, v*f))
-
-            elif parameter.type.type is int:
-                box = QSpinBox()
-                if parameter.symbol is not None:
-                    box.setPrefix(f'{parameter.symbol} = ')
-                if parameter.type.unit is not None:
-                    box.setSuffix(f' {parameter.type.unit}')
-                box.setProperty('si_factor', 1)
-                if parameter.type.min is not None:
-                    box.setMinimum(parameter.type.min)
-                if parameter.type.max is not None:
-                    box.setMaximum(parameter.type.max)
-                box.setValue(self._state.get_value(parameter))
-                box.valueChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-
-            elif parameter.type.type is str:
-                value = self._state.get_value(parameter)
-                if value is None:
-                    value = ''
-                if parameter.type.choices is not None:
-                    box = QComboBox()
-                    for choice in parameter.type.choices:
-                        box.addItem(choice)
-                    box.setCurrentText(value)
-                    box.currentTextChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-                else:
-                    box = QLineEdit()
-                    box.setText(value)
-                    box.textChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-                tool_tip = []
-                if parameter.symbol is not None:
-                    tool_tip.append(f'{parameter.symbol}')
-                if parameter.type.unit is not None:
-                    tool_tip.append(f'[{parameter.type.unit}]')
-                if len(tool_tip) > 0:
-                    box.setToolTip(' '.join(tool_tip))
-
-            else:
-                print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
-                continue  # others not supported for now in GUI
-
-            form.addRow(parameter.human_name(), box)
-            widgets[parameter.name] = box
+        param_dock = SarGuiParameterDock(self._state)
 
         widget = QWidget(self)
-        widget.setLayout(form)
+        widget.setLayout(param_dock.get_layout())
         scroll = QScrollArea(self)
         scroll.setWidget(widget)
 
@@ -650,8 +659,7 @@ class SarGuiMainFrame(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.resizeDocks([dock], [305], QtCore.Qt.Orientation.Horizontal)
         
-
-        return widgets
+        return param_dock
 
     def _autorange_plots(self):
         for win in self._windows:
