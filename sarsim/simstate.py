@@ -17,6 +17,7 @@ class SimParameter(NamedTuple):
     symbol: str
     default: Any = None
     info: str = None
+    category: str = None
 
     def __str__(self):
         return f'{self.name}: {self.type}'
@@ -39,36 +40,36 @@ _PERCENT = SimParameterType(float, unit='%', min=0, max=100)
 
 # ... to make a list of all changeable parameters here.
 SAR_SIM_PARAMETERS = (
-    SimParameter(_CARRIER_FREQUENCY, 'fmcw_start_frequency', 'f_1', 68e9),
-    SimParameter(_CARRIER_FREQUENCY, 'fmcw_stop_frequency', 'f_2', 92e9),
-    SimParameter(_ADC_FREQUENCY, 'fmcw_adc_frequency', 'f_adc', 1e6),
-    SimParameter(_RAMP_TIME, 'fmcw_ramp_duration', 'T_ramp', 8e-3),
+    SimParameter(_CARRIER_FREQUENCY, 'fmcw_start_frequency', 'f_1', 68e9, category='Acquisition'),
+    SimParameter(_CARRIER_FREQUENCY, 'fmcw_stop_frequency', 'f_2', 92e9, category='Acquisition'),
+    SimParameter(_ADC_FREQUENCY, 'fmcw_adc_frequency', 'f_adc', 1e6, category='Acquisition'),
+    SimParameter(_RAMP_TIME, 'fmcw_ramp_duration', 'T_ramp', 8e-3, category='Acquisition'),
 
-    SimParameter(_METERS, 'azimuth_start_position', 'az_x0', -2.5),
-    SimParameter(_METERS, 'azimuth_stop_position', 'az_xm', 2.5),
+    SimParameter(_METERS, 'azimuth_start_position', 'az_x0', -2.5, category='Acquisition'),
+    SimParameter(_METERS, 'azimuth_stop_position', 'az_xm', 2.5, category='Acquisition'),
 
-    SimParameter(_COUNT, 'azimuth_count', 'n_az', 201),
-    SimParameter(_POS_HALF_ANGLE, 'azimuth_3db_angle_deg', 'ant_a', 7.5),
-    SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5),
+    SimParameter(_COUNT, 'azimuth_count', 'n_az', 201, category='Acquisition'),
+    SimParameter(_POS_HALF_ANGLE, 'azimuth_3db_angle_deg', 'ant_a', 7.5, category='Acquisition'),
+    SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5, category='Acquisition'),
 
-    SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', 'Rect'),
-    SimParameter(_WINDOW_PARAM, 'azimuth_compression_window_parameter', 'ac_wnd_param', 0),
+    SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', 'Rect', category='Azimuth Compression'),
+    SimParameter(_WINDOW_PARAM, 'azimuth_compression_window_parameter', 'ac_wnd_param', 0, category='Azimuth Compression'),
 
-    SimParameter(_METERS, 'flight_height', 'az_z0', 1.0),
-    SimParameter(_METERS, 'flight_distance_to_scene_center', 'r_sc', 4.5),
+    SimParameter(_METERS, 'flight_height', 'az_z0', 1.0, category='Acquisition'),
+    SimParameter(_METERS, 'flight_distance_to_scene_center', 'r_sc', 4.5, category='Acquisition'),
 
-    SimParameter(_METERS, 'image_start_x', 'img_x0', -1),
-    SimParameter(_METERS, 'image_start_y', 'img_y0', -1),
-    SimParameter(_METERS, 'image_stop_x', 'img_xm', 1),
-    SimParameter(_METERS, 'image_stop_y', 'img_ym', 1),
+    SimParameter(_METERS, 'image_start_x', 'img_x0', -1, category='Azimuth Compression'),
+    SimParameter(_METERS, 'image_start_y', 'img_y0', -1, category='Azimuth Compression'),
+    SimParameter(_METERS, 'image_stop_x', 'img_xm', 1, category='Azimuth Compression'),
+    SimParameter(_METERS, 'image_stop_y', 'img_ym', 1, category='Azimuth Compression'),
 
-    SimParameter(_COUNT, 'image_count_x', 'n_x', 501),
-    SimParameter(_COUNT, 'image_count_y', 'n_y', 501),
+    SimParameter(_COUNT, 'image_count_x', 'n_x', 501, category='Azimuth Compression'),
+    SimParameter(_COUNT, 'image_count_y', 'n_y', 501, category='Azimuth Compression'),
 
-    SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16),
-    SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', 'Rect'),
-    SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0),
-    SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100)
+    SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16, category='Range Compression'),
+    SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', 'Rect', category='Range Compression'),
+    SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0, category='Range Compression'),
+    SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100, category='Range Compression')
 )
 
 
@@ -177,6 +178,8 @@ def write_simstate_stub_file() -> None:
                         if parameter.info is not None:
                             indented_info = parameter.info.replace('\n', f'\n{indent}')
                             f.write(f'{indent}{indented_info}')
+                        if parameter.category is not None:
+                            f.write(f'{indent}Category: {parameter.category}')
                         f.write(f'{indent}"""\n\n')
                     f.write(f'{indent}# << END OF ADDED DYNAMIC PROPERTIES\n')
                 else:
