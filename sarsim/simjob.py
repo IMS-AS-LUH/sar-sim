@@ -61,12 +61,15 @@ def run_sim(state: simstate.SarSimParameterState,
     # Optimal flight path 3D [state.azimuth_count, 3]
     flight_path = None
     if use_loaded_data:
-        flight_path = loaded_data.flight_path
+        exact_flight_path = loaded_data.flight_path
     else:
-        flight_path = np.array([
+        exact_flight_path = np.array([
             [x, -state.flight_distance_to_scene_center, state.flight_height]
             for x in azimuth_x
         ])
+    # Simulate flight path as received by GPS
+    distorted_fligh_path = _gps_sim(exact_flight_path)
+    flight_path = exact_flight_path # for now, continue to use the exact path for simulation
 
     # FMCW Simulation
     fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)
@@ -223,6 +226,8 @@ def run_sim(state: simstate.SarSimParameterState,
                              azimuth_x[0], r_vector[0], azimuth_x[1] - azimuth_x[0], r_vector[1] - r_vector[0]),
         ac=simstate.SimImage(np.array(image),
                              image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
+        fpath_exact=exact_flight_path,
+        fpath_distorted=distorted_fligh_path,
     )
 
 _fmcw_cache = {}
@@ -281,3 +286,25 @@ def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal
     _fmcw_cache[cache_key] = fmcw_lines
 
     return fmcw_lines
+
+def _gps_sim(flight_path: np.ndarray) -> np.ndarray:
+    """Return a down-sampled version of the flight path, as it might have been received by a GPS receiver"""
+    #TODO: We need a flight speed for 1Hz update rate simulation, make random distortion configurable
+    
+    # Downsample the path to 1 update per seconds
+    num_positions = 35 # for now, assume the flight take 35 seconds (from Matlab NDWDEMO)
+    random_factor = 10e-4 #from (from Matlab NDWDEMO)
+
+    indices = np.linspace(0, flight_path.shape[0]-1, num_positions, dtype=np.integer)
+    support = np.arange(flight_path.shape[0])
+    rand = np.random.default_rng(5019)
+
+    flight_path = np.array([
+        np.interp(support, indices, flight_path[indices, 0]),
+        np.interp(support, indices, flight_path[indices, 1]),
+        np.interp(support, indices, flight_path[indices, 2]),
+    ]).T + rand.normal(scale=random_factor, size=flight_path.shape)
+
+    #TODO: Random distortion
+
+    return flight_path

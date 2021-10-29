@@ -40,11 +40,29 @@ pg.graphicsItems.GradientEditorItem.Gradients['invpaperjet'] = {
         (1.00, (75, 25, 25)),
     ], 'mode': 'rgb'}
 
-
-class SarGuiPlotSubWindow(QMdiSubWindow):
-    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', variant: str = '') -> None:
+class SarGuiPlotWindowBase(QMdiSubWindow):
+    def __init__(self, title):
         super().__init__()
-        self.setWindowTitle('Plot')
+
+        self.setWindowTitle(title)
+
+        self._layout = pg.GraphicsLayoutWidget()
+
+    def do_autorange(self):
+        pass
+
+    BG_STALE = (64, 0, 0)
+    BG_NORMAL = (0, 0, 0)
+
+    def mark_stale(self, stale: bool = True):
+        if stale:
+            self._layout.setBackground(SarGuiPlotSubWindow.BG_STALE)
+        else:
+            self._layout.setBackground(SarGuiPlotSubWindow.BG_NORMAL)
+
+class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
+    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', variant: str = '') -> None:
+        super().__init__('Plot')
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
         self._variant = variant
@@ -99,8 +117,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         # Interpret image data as row-major instead of col-major
 
         isolines = False
-
-        self._layout = pg.GraphicsLayoutWidget()
 
         # A plot area (ViewBox + axes) for displaying the image
         self._p1: pg.PlotItem = self._layout.addPlot(row=1, col=1, title="")
@@ -245,18 +261,81 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._p1.setTitle(f"{siunits.format_si_unit(x, self._unit_x)}, {siunits.format_si_unit(y, self._unit_y)} : "
                           f"{val:.2f} dB")
 
-    BG_STALE = (64, 0, 0)
-    BG_NORMAL = (0, 0, 0)
-
-    def mark_stale(self, stale: bool = True):
-        if stale:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_STALE)
-        else:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_NORMAL)
-
     def set_color_preset(self, preset: str = 'jet'):
         self._hist.gradient.loadPreset(preset)  # spectrum, viridis
 
+
+class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
+    def __init__(self, state: simstate.SarSimParameterState):
+        super().__init__("Flight path")
+
+        self._state = state
+
+        self._data_exact: np.ndarray = None
+        self._data_distorted: np.ndarray = None
+
+        # Create plot items
+        self._plots_xyz: pg.PlotItem = self._layout.addPlot(row=1, col=1)
+        self._layout.ci.layout.setRowStretchFactor(1, 2)
+        self._plots_xyz.setLabel('left', 'Position', 'm')
+        self._plots_xyz.setLabel('bottom', '# Aperture') # this is not the position, but the aperture number
+        legend = self._plots_xyz.addLegend(offset=(50,-30), colCount=6)
+        legend.setParentItem(self._plots_xyz)
+        self._plot_x_exact = self._plots_xyz.plot(name='X (exact)', pen='y')
+        self._plot_y_exact = self._plots_xyz.plot(name='Y (exact)', pen='g')
+        self._plot_z_exact = self._plots_xyz.plot(name='Z (exact)', pen='c')
+        self._plot_x_distorted = self._plots_xyz.plot(name='X (distorted)', pen=pg.mkPen('y', style=Qt.DashLine))
+        self._plot_y_distorted = self._plots_xyz.plot(name='Y (distorted)', pen=pg.mkPen('g', style=Qt.DashLine))
+        self._plot_z_distorted = self._plots_xyz.plot(name='Z (distorted)', pen=pg.mkPen('c', style=Qt.DashLine))
+
+        self._plots_dist: pg.PlotItem = self._layout.addPlot(row=2, col=1)
+        self._layout.ci.layout.setRowStretchFactor(2, 1)
+        self._plots_dist.setLabel('left', 'Distance', 'λ')
+        self._plots_dist.setLabel('bottom', '# Aperture')
+        self._plot_dist = self._plots_dist.plot(name='Distance')
+
+        self._plots_dist.getViewBox().setXLink(self._plots_xyz.getViewBox())
+        
+        self.setWidget(self._layout)
+
+    @property
+    def data_exact(self) -> np.ndarray:
+        return self._data_exact
+
+    @data_exact.setter
+    def data_exact(self, data: np.ndarray):
+        self._data_exact = data
+        self._update_plots()
+
+    @property
+    def data_distorted(self) -> np.ndarray:
+        return self._data_distorted
+
+    @data_distorted.setter
+    def data_distorted(self, data: np.ndarray):
+        self._data_distorted = data
+        self._update_plots()
+
+    def _update_plots(self):
+        if self._data_exact is not None:
+            self._plot_x_exact.setData(self.data_exact[:,0])
+            self._plot_y_exact.setData(self.data_exact[:,1])
+            self._plot_z_exact.setData(self.data_exact[:,2])
+        
+        if self._data_distorted is not None:
+            self._plot_x_distorted.setData(self.data_distorted[:,0])
+            self._plot_y_distorted.setData(self.data_distorted[:,1])
+            self._plot_z_distorted.setData(self.data_distorted[:,2])
+
+        if self._data_exact is not None and self._data_distorted is not None:
+            dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
+            # scale to multiples of wavelength
+            dist = dist / simjob.SIGNAL_SPEED * self._state.fmcw_start_frequency
+            self._plot_dist.setData(dist)
+
+    def do_autorange(self):
+        self._plots_xyz.autoRange()
+        self._plots_dist.autoRange()
 
 class SarGuiSimWorker(QObject):
     finished = pyqtSignal(dict)
@@ -296,15 +375,21 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', variant='raw')
         self._plot_window_rc = SarGuiPlotSubWindow(False, variant='range_comp')
         self._plot_window_ac = SarGuiPlotSubWindow(variant='azimuth_comp')
+        self._plot_fpath = SarGuiFlightPathWindow(self._state)
 
         self._plot_window_raw.setWindowTitle('Raw FMCW Data')
         self._plot_window_rc.setWindowTitle('Range Compression')
         self._plot_window_ac.setWindowTitle('Azimuth Compression')
 
-        # Add in order of processing, last will be double size on left if 3 MDIs
-        self.mdi.addSubWindow(self._plot_window_raw)
-        self.mdi.addSubWindow(self._plot_window_rc)
-        self.mdi.addSubWindow(self._plot_window_ac)
+        # Add in order of processing
+        self._windows = [
+            self._plot_window_raw,
+            self._plot_window_rc,
+            self._plot_window_ac,
+            self._plot_fpath
+        ]
+        for win in self._windows:
+            self.mdi.addSubWindow(win)
 
         # Thread for worker
         self._worker_thread = None
@@ -312,10 +397,9 @@ class SarGuiMainFrame(QMainWindow):
 
         # See if we had any sim so far (for initial auto-ranging feature etc)
         self._first_run = True
-        self._plot_window_raw.mark_stale()
-        self._plot_window_rc.mark_stale()
-        self._plot_window_ac.mark_stale()
-
+        for win in self._windows:
+            win.mark_stale()
+        
         # Default view
         self.mdi.tileSubWindows()
         self.showMaximized()
@@ -570,9 +654,8 @@ class SarGuiMainFrame(QMainWindow):
         return widgets
 
     def _autorange_plots(self):
-        self._plot_window_raw.do_autorange()
-        self._plot_window_rc.do_autorange()
-        self._plot_window_ac.do_autorange()
+        for win in self._windows:
+            win.do_autorange()
 
     def _show_progress(self, progress: float, message: str):
         self._progress_bar.setValue(progress*1000)
@@ -590,9 +673,10 @@ class SarGuiMainFrame(QMainWindow):
         _assign(self._plot_window_raw, images['raw'])
         _assign(self._plot_window_rc, images['rc'])
         _assign(self._plot_window_ac, images['ac'])
-        self._plot_window_raw.mark_stale(False)
-        self._plot_window_rc.mark_stale(False)
-        self._plot_window_ac.mark_stale(False)
+        self._plot_fpath.data_exact = images['fpath_exact']
+        self._plot_fpath.data_distorted = images['fpath_distorted']
+        for win in self._windows:
+            win.mark_stale(False)
 
         if self._first_run:
             self._autorange_plots()
@@ -630,9 +714,8 @@ class SarGuiMainFrame(QMainWindow):
             self._worker.loaded_data = self._loaded_data
         else:
             self._worker.loaded_data = None
-        self._plot_window_raw.mark_stale(True)
-        self._plot_window_rc.mark_stale(True)
-        self._plot_window_ac.mark_stale(True)
+        for win in self._windows:
+            win.mark_stale(True)
         self._worker_thread.start()
 
     def _create_mdi(self):
