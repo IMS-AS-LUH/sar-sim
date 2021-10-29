@@ -7,6 +7,9 @@ from . import operations
 from . import sardata
 from . import simscene
 
+# Environmental Constants
+SIGNAL_SPEED = 2.99709e8
+
 CUDA_NUMBA_AVAILABLE = True
 
 try:
@@ -45,9 +48,6 @@ def run_sim(state: simstate.SarSimParameterState,
 
     #state.flight_height: float
     #state.flight_distance_to_scene_center: float
-
-    # Environmental Constants
-    signal_speed = 2.99709e8
 
     ## PREPARE DATA ##
     timestamper.tic('Data Preparation')
@@ -91,7 +91,7 @@ def run_sim(state: simstate.SarSimParameterState,
 
         timestamper.tic('FMCW Simulation')
 
-        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, SIGNAL_SPEED, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
 
         timestamper.toc()
 
@@ -136,11 +136,11 @@ def run_sim(state: simstate.SarSimParameterState,
 
     image = np.array([[complex(0, 0)] * state.image_count_y] * state.image_count_x)
 
-    PC1 = -4 * math.pi * state.fmcw_start_frequency / signal_speed
-    PC2 = 4 * math.pi * fmcw_slope / (signal_speed ** 2)
+    PC1 = -4 * math.pi * state.fmcw_start_frequency / SIGNAL_SPEED
+    PC2 = 4 * math.pi * fmcw_slope / (SIGNAL_SPEED ** 2)
 
     r0 = 0
-    fif = (state.fmcw_adc_frequency / 2) / (2 * fmcw_slope) * signal_speed
+    fif = (state.fmcw_adc_frequency / 2) / (2 * fmcw_slope) * SIGNAL_SPEED
     rmax = r0 + fif
     r_vector = np.linspace(r0, rmax, len(rc_lines[0]))
 
