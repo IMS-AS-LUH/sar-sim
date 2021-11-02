@@ -344,6 +344,7 @@ class SarGuiSimWorker(QObject):
     sim_state: simstate.SarSimParameterState = None
     loaded_data: sardata.SarData = None
     sim_scene: simscene.SimulationScene = None
+    gpu_id: int = 0
 
     def run(self):
         ts = profiling.TimeStamper()
@@ -351,7 +352,7 @@ class SarGuiSimWorker(QObject):
         def cb(p, m):
             self.progress.emit(p, m)
 
-        images = simjob.run_sim(self.sim_state, self.sim_scene, ts, cb, self.loaded_data)
+        images = simjob.run_sim(self.sim_state, self.sim_scene, ts, cb, self.loaded_data, self.gpu_id)
         self.finished.emit(images)
 
 
@@ -462,8 +463,10 @@ class SarGuiParameterDock():
                 raise NotImplementedError("Update routine missing!")
 
 class SarGuiMainFrame(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, args) -> None:
         super().__init__()
+
+        self.args = args # command line args
 
         self._state = simstate.create_state()
         self._scene = simscene.create_default_scene()
@@ -732,6 +735,7 @@ class SarGuiMainFrame(QMainWindow):
         self._create_worker()
         self._worker.sim_state = self._state
         self._worker.sim_scene = self._scene
+        self._worker.gpu_id = self.args.gpu
         if self._use_loaded_data:
             self._worker.loaded_data = self._loaded_data
         else:
@@ -762,7 +766,7 @@ class SarGuiMainFrame(QMainWindow):
 
 
 
-def run_gui():
+def run_gui(args):
     QApplication.setStyle('fusion')
 
     pg.setConfigOptions(imageAxisOrder='row-major')
@@ -772,7 +776,7 @@ def run_gui():
     app.setApplicationDisplayName('SAR-Sim GUI')
     app.setOrganizationName('IMS')
 
-    wnd = SarGuiMainFrame()
+    wnd = SarGuiMainFrame(args)
     wnd.show()
 
     app.exec_()

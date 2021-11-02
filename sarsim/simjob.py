@@ -25,10 +25,14 @@ def run_sim(state: simstate.SarSimParameterState,
             scene: simscene.SimulationScene,
             timestamper:profiling.TimeStamper = None,
             progress_callback: callable = None,
-            loaded_data: sardata.SarData = None):
+            loaded_data: sardata.SarData = None,
+            gpu_id: int = 0):
     timestamper = timestamper or profiling.TimeStamper()
     ac_use_cuda = CUDA_NUMBA_AVAILABLE
     use_loaded_data = loaded_data is not None
+
+    if ac_use_cuda:
+        cuda.select_device(gpu_id)
 
     progress_callback = progress_callback or (lambda _0, _1: None)
     progress_callback(0, 'Preparing Simulation')
