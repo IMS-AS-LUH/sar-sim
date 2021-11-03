@@ -70,7 +70,7 @@ def run_sim(state: simstate.SarSimParameterState,
     else:
         exact_flight_path = _make_flight_path(state)
     # Simulate flight path as received by GPS
-    distorted_fligh_path = _gps_sim(exact_flight_path)
+    distorted_fligh_path = _distort_path(exact_flight_path, state)
     flight_path = exact_flight_path # for now, continue to use the exact path for simulation
 
     # FMCW Simulation
@@ -289,13 +289,10 @@ def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal
 
     return fmcw_lines
 
-def _gps_sim(flight_path: np.ndarray) -> np.ndarray:
+def _distort_path(flight_path: np.ndarray, state: simstate.SarSimParameterState) -> np.ndarray:
     """Return a down-sampled version of the flight path, as it might have been received by a GPS receiver"""
-    #TODO: We need a flight speed for 1Hz update rate simulation, make random distortion configurable
-    
-    # Downsample the path to 1 update per seconds
-    num_positions = 35 # for now, assume the flight take 35 seconds (from Matlab NDWDEMO)
-    random_factor = 10e-4 #from (from Matlab NDWDEMO)
+    num_positions = int(state.distortion_sample_freqency * (state.azimuth_stop_position -state.azimuth_start_position))
+    random_factor = state.distortion_random_factor
 
     indices = np.linspace(0, flight_path.shape[0]-1, num_positions, dtype=np.integer)
     support = np.arange(flight_path.shape[0])

@@ -29,7 +29,7 @@ class SimParameter(NamedTuple):
 # We define reusable parameter types ...
 _CARRIER_FREQUENCY = SimParameterType(float, unit='Hz', min=1e3, max=300e9)
 _ADC_FREQUENCY = SimParameterType(float, unit='Hz', min=1, max=300e6)
-_WIGGLE_FREQUENCY = SimParameterType(float, unit='1/m', min=0.1, max=100)
+_SPATIAL_FREQUENCY = SimParameterType(float, unit='1/m', min=0.1, max=100)
 _RAMP_TIME = SimParameterType(float, unit='s', min=1e-6, max=100)
 _METERS = SimParameterType(float, unit='m', min=-100e3, max=100e3)
 _COUNT = SimParameterType(int, min=1, max=32000)
@@ -64,9 +64,12 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_METERS, 'flight_wiggle_amplitude_azimuth', 'wiggle_az_ampl', 0.05, category='Flight path'),
     SimParameter(_METERS, 'flight_wiggle_amplitude_range', 'wiggle_rg_ampl', 0.01, category='Flight path'),
     SimParameter(_METERS, 'flight_wiggle_amplitude_height', 'wiggle_z_ampl', 0.015, category='Flight path'),
-    SimParameter(_WIGGLE_FREQUENCY, 'flight_wiggle_frequency_azimuth', 'wiggle_az_freq', 2, category='Flight path'),
-    SimParameter(_WIGGLE_FREQUENCY, 'flight_wiggle_frequency_range', 'wiggle_rg_freq', 4, category='Flight path'),
-    SimParameter(_WIGGLE_FREQUENCY, 'flight_wiggle_frequency_height', 'wiggle_z_freq', 5, category='Flight path'),
+    SimParameter(_SPATIAL_FREQUENCY, 'flight_wiggle_frequency_azimuth', 'wiggle_az_freq', 2, category='Flight path'),
+    SimParameter(_SPATIAL_FREQUENCY, 'flight_wiggle_frequency_range', 'wiggle_rg_freq', 4, category='Flight path'),
+    SimParameter(_SPATIAL_FREQUENCY, 'flight_wiggle_frequency_height', 'wiggle_z_freq', 5, category='Flight path'),
+
+    SimParameter(_SPATIAL_FREQUENCY, 'distortion_sample_freqency', 'distortion_freq', 7, category='Flight path'),
+    SimParameter(_FACTOR, 'distortion_random_factor', 'distortion_factor', 10e-4, category='Flight path'),
 
     SimParameter(_METERS, 'image_start_x', 'img_x0', -1, category='Azimuth Compression'),
     SimParameter(_METERS, 'image_start_y', 'img_y0', -1, category='Azimuth Compression'),
