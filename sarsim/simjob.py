@@ -57,6 +57,7 @@ def run_sim(state: simstate.SarSimParameterState,
     timestamper.tic('Data Preparation')
 
     # Optimal azimuth x positions
+    # TODO: Abbandon this?
     azimuth_x = np.linspace(state.azimuth_start_position, state.azimuth_stop_position, state.azimuth_count)
 
     print(
@@ -67,10 +68,7 @@ def run_sim(state: simstate.SarSimParameterState,
     if use_loaded_data:
         exact_flight_path = loaded_data.flight_path
     else:
-        exact_flight_path = np.array([
-            [x, -state.flight_distance_to_scene_center, state.flight_height]
-            for x in azimuth_x
-        ])
+        exact_flight_path = _make_flight_path(state)
     # Simulate flight path as received by GPS
     distorted_fligh_path = _gps_sim(exact_flight_path)
     flight_path = exact_flight_path # for now, continue to use the exact path for simulation
@@ -309,6 +307,18 @@ def _gps_sim(flight_path: np.ndarray) -> np.ndarray:
         np.interp(support, indices, flight_path[indices, 2]),
     ]).T + rand.normal(scale=random_factor, size=flight_path.shape)
 
-    #TODO: Random distortion
-
     return flight_path
+
+def _make_flight_path(state: simstate.SarSimParameterState) -> np.ndarray:
+    # optimal x positions
+    azimuth_x = np.linspace(state.azimuth_start_position, state.azimuth_stop_position, state.azimuth_count)
+    # add constant y and z position
+    path = np.array([
+        [x, -state.flight_distance_to_scene_center, state.flight_height]
+        for x in azimuth_x
+    ])
+    # add wiggles
+    unscaled_offsets = np.sin(np.stack((azimuth_x, azimuth_x, azimuth_x)).T * np.array([state.flight_wiggle_frequency_azimuth, state.flight_wiggle_frequency_range, state.flight_wiggle_frequency_height]))
+    scaled_offsets = unscaled_offsets * np.array([state.flight_wiggle_amplitude_azimuth, state.flight_wiggle_amplitude_range, state.flight_wiggle_amplitude_height])
+    path = path + state.flight_wiggle_global_scale * scaled_offsets
+    return path
