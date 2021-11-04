@@ -38,6 +38,7 @@ _WINDOW = SimParameterType(Window, choices=SUPPORTED_WINDOWS)
 _WINDOW_PARAM = SimParameterType(float)
 _PERCENT = SimParameterType(float, unit='%', min=0, max=100)
 _FACTOR = SimParameterType(float, min=0)
+_BOOL = SimParameterType(bool)
 
 
 # ... to make a list of all changeable parameters here.
@@ -82,7 +83,9 @@ SAR_SIM_PARAMETERS = (
     SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16, category='Range Compression'),
     SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', SUPPORTED_WINDOWS['Rect'], category='Range Compression'),
     SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0, category='Range Compression'),
-    SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100, category='Range Compression')
+    SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100, category='Range Compression'),
+
+    SimParameter(_BOOL, 'use_distorted_path', 'path_distort', default=False, category='Flight path'),
 )
 
 

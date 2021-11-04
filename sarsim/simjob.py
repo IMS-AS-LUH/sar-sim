@@ -79,7 +79,7 @@ def run_sim(state: simstate.SarSimParameterState,
         exact_flight_path = _make_flight_path(state)
     # Simulate flight path as received by GPS
     distorted_fligh_path = _distort_path(exact_flight_path, state)
-    flight_path = exact_flight_path # for now, continue to use the exact path for simulation
+    flight_path = distorted_fligh_path if state.use_distorted_path else exact_flight_path
 
     # FMCW Simulation
     fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)

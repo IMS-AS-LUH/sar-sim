@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
+from PyQt5.QtWidgets import QApplication, QCheckBox, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
     QFormLayout, QSpinBox, QDoubleSpinBox, QTabWidget, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit, QBoxLayout
 import pyqtgraph as pg
 import numpy as np
@@ -437,6 +437,11 @@ class SarGuiParameterDock():
                         tool_tip.append(f'[{parameter.type.unit}]')
                     if len(tool_tip) > 0:
                         box.setToolTip(' '.join(tool_tip))
+
+                elif parameter.type.type is bool:
+                    box = QCheckBox()
+                    box.setChecked(state.get_value(parameter))
+                    box.stateChanged.connect(lambda v, p=parameter: state.set_value(p, v == QtCore.Qt.CheckState.Checked))
 
                 else:
                     print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
