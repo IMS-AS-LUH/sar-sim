@@ -15,7 +15,7 @@ _SI_PREFIX = [
 ]
 
 
-def choose_si_scale(value: float, unit: str = None) -> Tuple[float, str]:
+def choose_si_scale(value: float, unit: str = '') -> Tuple[float, str]:
     """
     Chooses a proper SI prefix for the given unit to represent a value.
     Then: Take the unscaled value, divide by factor to get scaled value.
@@ -25,18 +25,16 @@ def choose_si_scale(value: float, unit: str = None) -> Tuple[float, str]:
     """
     for factor, name in _SI_PREFIX:
         if value >= factor:
-            return factor, f'{name}{unit or ""}'
+            return factor, f'{name}{unit}'
     return 1, unit
 
 
-def scale_si_unit(value: float, unit: str = None) -> Tuple[float, str]:
-    for factor, name in _SI_PREFIX:
-        if value >= factor:
-            return value / factor, f'{name}{unit or ""}'
-    return value, unit
+def scale_si_unit(value: float, unit: str = '') -> Tuple[float, str]:
+    factor, unit = choose_si_scale(value, unit)
+    return value / factor, unit
 
 
-def format_si_unit(value: float, unit: str = None) -> str:
+def format_si_unit(value: float, unit: str = '') -> str:
     value, unit = scale_si_unit(value, unit)
     return f'{value:.3f} {unit}'
 

@@ -1,5 +1,7 @@
+# type: ignore Unfortunatly, a lot of Qt stuff has incorrect type annotations :(
+
 import itertools
-from typing import Tuple
+from typing import Optional, Tuple
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
@@ -80,11 +82,11 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         # self._set_random_data()
 
     @property
-    def data(self) -> np.array:
+    def data(self) -> np.ndarray:
         return self._data
 
     @data.setter
-    def data(self, data: np.array):
+    def data(self, data: np.ndarray):
         self._data = data
         self._update_data()
 
@@ -272,8 +274,8 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
 
         self._state = state
 
-        self._data_exact: np.ndarray = None
-        self._data_distorted: np.ndarray = None
+        self._data_exact: Optional[np.ndarray] = None
+        self._data_distorted: Optional[np.ndarray] = None
 
         # Create plot items
         self._plots_xyz: pg.PlotItem = self._layout.addPlot(row=1, col=1)
@@ -300,7 +302,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self.setWidget(self._layout)
 
     @property
-    def data_exact(self) -> np.ndarray:
+    def data_exact(self) -> Optional[np.ndarray]:
         return self._data_exact
 
     @data_exact.setter
@@ -309,7 +311,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self._update_plots()
 
     @property
-    def data_distorted(self) -> np.ndarray:
+    def data_distorted(self) -> Optional[np.ndarray]:
         return self._data_distorted
 
     @data_distorted.setter
@@ -319,14 +321,14 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
 
     def _update_plots(self):
         if self._data_exact is not None:
-            self._plot_x_exact.setData(self.data_exact[:,0])
-            self._plot_y_exact.setData(self.data_exact[:,1])
-            self._plot_z_exact.setData(self.data_exact[:,2])
+            self._plot_x_exact.setData(self._data_exact[:,0])
+            self._plot_y_exact.setData(self._data_exact[:,1])
+            self._plot_z_exact.setData(self._data_exact[:,2])
         
         if self._data_distorted is not None:
-            self._plot_x_distorted.setData(self.data_distorted[:,0])
-            self._plot_y_distorted.setData(self.data_distorted[:,1])
-            self._plot_z_distorted.setData(self.data_distorted[:,2])
+            self._plot_x_distorted.setData(self._data_distorted[:,0])
+            self._plot_y_distorted.setData(self._data_distorted[:,1])
+            self._plot_z_distorted.setData(self._data_distorted[:,2])
 
         if self._data_exact is not None and self._data_distorted is not None:
             dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
@@ -341,9 +343,9 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
 class SarGuiSimWorker(QObject):
     finished = pyqtSignal(dict)
     progress = pyqtSignal(float, str)
-    sim_state: simstate.SarSimParameterState = None
-    loaded_data: sardata.SarData = None
-    sim_scene: simscene.SimulationScene = None
+    sim_state: simstate.SarSimParameterState
+    loaded_data: Optional[sardata.SarData] = None
+    sim_scene: simscene.SimulationScene
     gpu_id: int = 0
 
     def run(self):
@@ -413,17 +415,18 @@ class SarGuiParameterDock():
                     box.setValue(state.get_value(parameter))
                     box.valueChanged.connect(lambda v, p=parameter: state.set_value(p, v))
 
-                elif parameter.type.type is str:
+                elif parameter.type.type is str or parameter.type.choices is not None:
                     value = state.get_value(parameter)
+                    choices = parameter.type.choices
                     if value is None:
                         value = ''
-                    if parameter.type.choices is not None:
+                    if choices is not None: # enum-style parameter
                         box = QComboBox()
-                        for choice in parameter.type.choices:
+                        for choice in choices.keys():
                             box.addItem(choice)
-                        box.setCurrentText(value)
-                        box.currentTextChanged.connect(lambda v, p=parameter: state.set_value(p, v))
-                    else:
+                        box.setCurrentText(list(choices.keys())[list(choices.values()).index(value)])
+                        box.currentTextChanged.connect(lambda v, p=parameter: state.set_value(p, choices[v]))
+                    else: # normal string parameter
                         box = QLineEdit()
                         box.setText(value)
                         box.textChanged.connect(lambda v, p=parameter: state.set_value(p, v))
@@ -471,7 +474,7 @@ class SarGuiMainFrame(QMainWindow):
         self._state = simstate.create_state()
         self._scene = simscene.create_default_scene()
 
-        self._loaded_data = None  # sardata.SarData
+        self._loaded_data: Optional[sardata.SarData] = None
         self._use_loaded_data: bool = False
 
         self._color_preset = 'jet'
@@ -502,8 +505,8 @@ class SarGuiMainFrame(QMainWindow):
             self.mdi.addSubWindow(win)
 
         # Thread for worker
-        self._worker_thread = None
-        self._worker = None
+        self._worker_thread: Optional[QThread] = None
+        self._worker: Optional[SarGuiSimWorker] = None
 
         # See if we had any sim so far (for initial auto-ranging feature etc)
         self._first_run = True
@@ -733,6 +736,7 @@ class SarGuiMainFrame(QMainWindow):
             return
         print('GUI: Starting Simulation in Thread')
         self._create_worker()
+        assert self._worker is not None and self._worker_thread is not None
         self._worker.sim_state = self._state
         self._worker.sim_scene = self._scene
         self._worker.gpu_id = self.args.gpu

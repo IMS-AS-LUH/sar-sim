@@ -1,5 +1,6 @@
 import cmath
 import math
+from typing import Callable
 
 import numpy as np
 import scipy.signal as signal
@@ -24,7 +25,7 @@ from . import simstate, profiling
 def run_sim(state: simstate.SarSimParameterState,
             scene: simscene.SimulationScene,
             timestamper:profiling.TimeStamper = None,
-            progress_callback: callable = None,
+            progress_callback: Callable[[float, str], None] = None,
             loaded_data: sardata.SarData = None,
             gpu_id: int = 0):
     timestamper = timestamper or profiling.TimeStamper()
@@ -66,6 +67,7 @@ def run_sim(state: simstate.SarSimParameterState,
     # Optimal flight path 3D [state.azimuth_count, 3]
     flight_path = None
     if use_loaded_data:
+        assert loaded_data is not None
         exact_flight_path = loaded_data.flight_path
     else:
         exact_flight_path = _make_flight_path(state)
@@ -83,6 +85,7 @@ def run_sim(state: simstate.SarSimParameterState,
     timestamper.toc()
     fmcw_lines = None
     if use_loaded_data:
+        assert loaded_data is not None
         progress_callback(.05, 'Using loaded FMCW Data')
         fmcw_lines = loaded_data.fmcw_lines
     else:
@@ -131,7 +134,7 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
-    ac_wnd = operations.create_window(state.azimuth_compression_window, state.azimuth_compression_window_parameter, len(flight_path), False)
+    ac_wnd = state.azimuth_compression_window.factory(len(flight_path), False, state.azimuth_compression_window_parameter)
 
     print(f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
 
@@ -156,9 +159,9 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
 
         beamlimit = state.azimuth_compression_beam_limit / 180 * math.pi
 
-        @cuda.jit()
+        @cuda.jit() # type: ignore
         def ac_kernel(flight_path_array, image, rc_lines):
-            ix, iy = cuda.grid(2)
+            ix, iy = cuda.grid(2) # type: ignore
             if ix >= nx or iy >= ny:
                 return
             temp = complex(0, 0)
@@ -189,7 +192,7 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
         blocksize = (16, 16)
         gridsize = (math.ceil(nx / blocksize[0]), math.ceil(ny / blocksize[1]))
         rc_lines_array = np.array(rc_lines)
-        ac_kernel[gridsize, blocksize](flight_path, image, rc_lines_array)
+        ac_kernel[gridsize, blocksize](flight_path, image, rc_lines_array) # type: ignore
 
     else:
         for ia in range(len(flight_path)):
@@ -220,12 +223,12 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
 def _range_compression(state: simstate.SarSimParameterState, fmcw_lines: list) -> np.ndarray:
     rc_used_bandwidth = state.range_compression_used_bandwidth / 100
     if rc_used_bandwidth >= 0.99999999:
-        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
+        wnd = state.range_compression_window.factory(len(fmcw_lines[0]), False, state.range_compression_window_parameter)
     else:
         original_length = len(fmcw_lines[0])
         used_part = round(rc_used_bandwidth*original_length)
         used_offset = math.floor((original_length-used_part)/2)
-        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, used_part, False)
+        wnd = state.range_compression_window.factory(used_part, False, state.range_compression_window_parameter)
         wnd = np.pad(wnd, (used_offset, original_length-used_part-used_offset), 'constant', constant_values=(0, 0))
 
     #nfft = 16 * 1024  # len(fmcw_lines[0])
@@ -237,9 +240,8 @@ def _range_compression(state: simstate.SarSimParameterState, fmcw_lines: list) -
         np.fft.rfft(fmcw_line * wnd, n=nfft)
         for fmcw_line in fmcw_lines
     ]
-    # rc_lines = np.fft.rfft(fmcw_lines * wnd, n=nfft, axis=1)
     
-    return rc_lines
+    return np.array(rc_lines)
 
 _fmcw_cache = {}
 

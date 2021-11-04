@@ -1,23 +1,23 @@
-from typing import NamedTuple, Tuple, Any, Union, List, Iterable
+from typing import Dict, NamedTuple, Optional, Tuple, Any, Type, Union, List, Iterable
 import numpy as np
 import configparser
-from .operations import SUPPORTED_WINDOWS
+from .operations import SUPPORTED_WINDOWS, Window
 
+# note: this should be a Generic[T] for smarter typechecking, but python does not allow for multiple inheritance on named tuples :(
 class SimParameterType(NamedTuple):
-    type: type
-    unit: str = None
-    min: Union[int, float, None] = None
-    max: Union[int, float, None] = None
-    choices: list = None
-
+    type: Type
+    unit: str = ''
+    min: Union[Any, None] = None
+    max: Union[Any, None] = None
+    choices: Optional[Dict[str, Any]] = None
 
 class SimParameter(NamedTuple):
     type: SimParameterType
     name: str
     symbol: str
-    default: Any = None
-    info: str = None
-    category: str = None
+    default: Optional[Any] = None
+    info: Optional[str] = None
+    category: Optional[str] = None
 
     def __str__(self):
         return f'{self.name}: {self.type}'
@@ -34,7 +34,7 @@ _RAMP_TIME = SimParameterType(float, unit='s', min=1e-6, max=100)
 _METERS = SimParameterType(float, unit='m', min=-100e3, max=100e3)
 _COUNT = SimParameterType(int, min=1, max=32000)
 _POS_HALF_ANGLE = SimParameterType(float, unit='°', min=0, max=180)
-_WINDOW = SimParameterType(str, choices=[x.name for x in SUPPORTED_WINDOWS])
+_WINDOW = SimParameterType(Window, choices=SUPPORTED_WINDOWS)
 _WINDOW_PARAM = SimParameterType(float)
 _PERCENT = SimParameterType(float, unit='%', min=0, max=100)
 _FACTOR = SimParameterType(float, min=0)
@@ -54,7 +54,7 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_POS_HALF_ANGLE, 'azimuth_3db_angle_deg', 'ant_a', 7.5, category='Acquisition'),
     SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5, category='Acquisition'),
 
-    SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', 'Rect', category='Azimuth Compression'),
+    SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', SUPPORTED_WINDOWS['Rect'], category='Azimuth Compression'),
     SimParameter(_WINDOW_PARAM, 'azimuth_compression_window_parameter', 'ac_wnd_param', 0, category='Azimuth Compression'),
 
     SimParameter(_METERS, 'flight_height', 'az_z0', 1.0, category='Acquisition'),
@@ -80,7 +80,7 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_COUNT, 'image_count_y', 'n_y', 501, category='Azimuth Compression'),
 
     SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16, category='Range Compression'),
-    SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', 'Rect', category='Range Compression'),
+    SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', SUPPORTED_WINDOWS['Rect'], category='Range Compression'),
     SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0, category='Range Compression'),
     SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100, category='Range Compression')
 )
@@ -94,7 +94,7 @@ class SarSimParameterState(object):
     def __init__(self):
         # <dynamic_properties>
         for parameter in SAR_SIM_PARAMETERS:
-            self.__setattr__(SarSimParameterState._internal_name(parameter), parameter.type.type(parameter.default))
+            self.__setattr__(SarSimParameterState._internal_name(parameter), parameter.default)
         pass
 
     def _setter(self, parameter: SimParameter, internal_name: str, value):
@@ -183,7 +183,11 @@ def write_simstate_stub_file() -> None:
                     indent = ' '*line.index('#')
                     f.write(f'{indent}# BEGIN OF ADDED DYNAMIC PROPERTIES >>\n')
                     for parameter in SAR_SIM_PARAMETERS:
-                        f.write(f'{indent}self.{parameter.name}: {parameter.type.type.__name__} = {parameter.default}\n')
+                        # parameters with choises (aka enums) are currently not fully supported, write no default
+                        if parameter.type.choices is not None:
+                            f.write(f'{indent}self.{parameter.name}: {parameter.type.type.__name__}\n')
+                        else:
+                            f.write(f'{indent}self.{parameter.name}: {parameter.type.type.__name__} = {parameter.default}\n')
                         f.write(f'{indent}"""\n')
                         f.write(f'{indent}**{parameter.symbol} [{parameter.type.unit}]** {parameter.human_name()}\n\n')
                         if parameter.type.min is not None or parameter.type.max is not None:

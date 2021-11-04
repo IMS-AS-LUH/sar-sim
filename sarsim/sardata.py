@@ -5,6 +5,8 @@ import scipy.io as sio
 import array
 import os
 from configparser import ConfigParser
+
+from sarsim.operations import SUPPORTED_WINDOWS
 from . import simstate
 
 class SarData(object):
@@ -12,7 +14,7 @@ class SarData(object):
         self.cfg: ConfigParser = ConfigParser()
         self.sim_state: simstate.SarSimParameterState = simstate.SarSimParameterState()
         self.fmcw_lines: list = []
-        self.flight_path: np.ndarray = []
+        self.flight_path: np.ndarray = np.array([])
         self.name: str = ""
 
     @staticmethod
@@ -48,8 +50,8 @@ class SarData(object):
         sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
 
         # Guessed somewhat, TODO: Qualify sensible settings
-        sim.azimuth_compression_window = 'Blackman'
-        sim.range_compression_window = 'Tukey'
+        sim.azimuth_compression_window = SUPPORTED_WINDOWS['Blackman']
+        sim.range_compression_window = SUPPORTED_WINDOWS['Tukey']
         sim.range_compression_window_parameter = 0.25
 
         # *** Decode Flightpath ***
