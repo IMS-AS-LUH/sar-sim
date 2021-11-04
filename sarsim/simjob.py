@@ -1,6 +1,6 @@
 import cmath
 import math
-from typing import Callable
+from typing import Callable, NamedTuple
 
 import numpy as np
 import scipy.signal as signal
@@ -21,13 +21,19 @@ except ModuleNotFoundError:
 
 from . import simstate, profiling
 
+class SimResult(NamedTuple):
+    raw: simstate.SimImage
+    rc: simstate.SimImage
+    ac: simstate.SimImage
+    fpath_exact: np.ndarray
+    fpath_distorted: np.ndarray
 
 def run_sim(state: simstate.SarSimParameterState,
             scene: simscene.SimulationScene,
             timestamper:profiling.TimeStamper = None,
             progress_callback: Callable[[float, str], None] = None,
             loaded_data: sardata.SarData = None,
-            gpu_id: int = 0):
+            gpu_id: int = 0) -> SimResult:
     timestamper = timestamper or profiling.TimeStamper()
     ac_use_cuda = CUDA_NUMBA_AVAILABLE
     use_loaded_data = loaded_data is not None
@@ -119,7 +125,7 @@ def run_sim(state: simstate.SarSimParameterState,
 
     timestamper.toc()
     progress_callback(1, 'Finished')
-    return dict(
+    return SimResult(
         raw=simstate.SimImage(np.array(fmcw_lines),
                               azimuth_x[0], 0, azimuth_x[1] - azimuth_x[0], 1/state.fmcw_adc_frequency),
         rc=simstate.SimImage(np.array(rc_lines),

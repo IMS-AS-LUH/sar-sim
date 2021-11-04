@@ -341,7 +341,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self._plots_dist.autoRange()
 
 class SarGuiSimWorker(QObject):
-    finished = pyqtSignal(dict)
+    finished = pyqtSignal(simjob.SimResult)
     progress = pyqtSignal(float, str)
     sim_state: simstate.SarSimParameterState
     loaded_data: Optional[sardata.SarData] = None
@@ -689,7 +689,7 @@ class SarGuiMainFrame(QMainWindow):
         self._progress_bar.setValue(progress*1000)
         self._progress_label.setText(message)
 
-    def _show_results(self, images: dict):
+    def _show_results(self, result: simjob.SimResult):
         print('GUI: Updating Plots')
 
         def _assign(win: SarGuiPlotSubWindow, img: simstate.SimImage):
@@ -698,11 +698,11 @@ class SarGuiMainFrame(QMainWindow):
             #win.set_transform(img.x0, img.y0, img.dx, img.dy)
             win.set_transform(img.y0, img.x0, img.dy, img.dx)
 
-        _assign(self._plot_window_raw, images['raw'])
-        _assign(self._plot_window_rc, images['rc'])
-        _assign(self._plot_window_ac, images['ac'])
-        self._plot_fpath.data_exact = images['fpath_exact']
-        self._plot_fpath.data_distorted = images['fpath_distorted']
+        _assign(self._plot_window_raw, result.raw)
+        _assign(self._plot_window_rc, result.rc)
+        _assign(self._plot_window_ac, result.ac)
+        self._plot_fpath.data_exact = result.fpath_exact
+        self._plot_fpath.data_distorted = result.fpath_distorted
         for win in self._windows:
             win.mark_stale(False)
 
