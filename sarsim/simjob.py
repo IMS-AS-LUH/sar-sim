@@ -106,41 +106,38 @@ def run_sim(state: simstate.SarSimParameterState,
     # wnd = signal.hann(M=len(fmcw_lines[0]), sym=False)
     # wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
 
-    rc_used_bandwidth = state.range_compression_used_bandwidth / 100
-    if rc_used_bandwidth >= 0.99999999:
-        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
-    else:
-        original_length = len(fmcw_lines[0])
-        used_part = round(rc_used_bandwidth*original_length)
-        used_offset = math.floor((original_length-used_part)/2)
-        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, used_part, False)
-        wnd = np.pad(wnd, (used_offset, original_length-used_part-used_offset), 'constant', constant_values=(0, 0))
-
-    #nfft = 16 * 1024  # len(fmcw_lines[0])
-    print(f'Range-FFT: Have {len(wnd)} samples, minimum oversampling: {state.range_compression_fft_min_oversample:.3f}x')
-    nfft = state.range_compression_fft_min_oversample * len(fmcw_lines[0])
-    nfft = 2**math.ceil(math.log2(nfft))
-    print(f'Using FFT length of {nfft} to get actual oversampling of {nfft/len(wnd):.3f}x')
-    rc_lines = [
-        np.fft.rfft(fmcw_line * wnd, n=nfft)
-        for fmcw_line in fmcw_lines
-    ]
+    rc_lines = _range_compression(state, fmcw_lines)
     timestamper.toc()
 
     ## Azimuth Compression
     progress_callback(.5, 'Azimuth Compression')
     timestamper.tic('Azimuth Compression')
+    image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines)
+
+    timestamper.toc()
+    progress_callback(1, 'Finished')
+    return dict(
+        raw=simstate.SimImage(np.array(fmcw_lines),
+                              azimuth_x[0], 0, azimuth_x[1] - azimuth_x[0], 1/state.fmcw_adc_frequency),
+        rc=simstate.SimImage(np.array(rc_lines),
+                             azimuth_x[0], r_vector[0], azimuth_x[1] - azimuth_x[0], r_vector[1] - r_vector[0]),
+        ac=simstate.SimImage(np.array(image),
+                             image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
+        fpath_exact=exact_flight_path,
+        fpath_distorted=distorted_fligh_path,
+    )
+
+def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray):
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
-    ac_wnd = operations.create_window(state.azimuth_compression_window, state.azimuth_compression_window_parameter,
-                                   len(fmcw_lines), False)
+    ac_wnd = operations.create_window(state.azimuth_compression_window, state.azimuth_compression_window_parameter, len(flight_path), False)
 
-    print(
-        f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
+    print(f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
 
-    image = np.array([[complex(0, 0)] * state.image_count_y] * state.image_count_x)
+    image = np.zeros((state.image_count_x, state.image_count_y), dtype=complex)
 
+    fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
     PC1 = -4 * math.pi * state.fmcw_start_frequency / SIGNAL_SPEED
     PC2 = 4 * math.pi * fmcw_slope / (SIGNAL_SPEED ** 2)
 
@@ -218,23 +215,35 @@ def run_sim(state: simstate.SarSimParameterState,
                         sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][
                             sample_int + 1] * sample_frac
                     image[ix][iy] = image[ix][iy] + sample * cmath.exp(complex(0, pc)) * a
+    return image_x, image_y, image, r_vector
 
-    timestamper.toc()
-    progress_callback(1, 'Finished')
-    return dict(
-        raw=simstate.SimImage(np.array(fmcw_lines),
-                              azimuth_x[0], 0, azimuth_x[1] - azimuth_x[0], 1/state.fmcw_adc_frequency),
-        rc=simstate.SimImage(np.array(rc_lines),
-                             azimuth_x[0], r_vector[0], azimuth_x[1] - azimuth_x[0], r_vector[1] - r_vector[0]),
-        ac=simstate.SimImage(np.array(image),
-                             image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
-        fpath_exact=exact_flight_path,
-        fpath_distorted=distorted_fligh_path,
-    )
+def _range_compression(state: simstate.SarSimParameterState, fmcw_lines: list) -> np.ndarray:
+    rc_used_bandwidth = state.range_compression_used_bandwidth / 100
+    if rc_used_bandwidth >= 0.99999999:
+        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, len(fmcw_lines[0]), False)
+    else:
+        original_length = len(fmcw_lines[0])
+        used_part = round(rc_used_bandwidth*original_length)
+        used_offset = math.floor((original_length-used_part)/2)
+        wnd = operations.create_window(state.range_compression_window, state.range_compression_window_parameter, used_part, False)
+        wnd = np.pad(wnd, (used_offset, original_length-used_part-used_offset), 'constant', constant_values=(0, 0))
+
+    #nfft = 16 * 1024  # len(fmcw_lines[0])
+    print(f'Range-FFT: Have {len(wnd)} samples, minimum oversampling: {state.range_compression_fft_min_oversample:.3f}x')
+    nfft = state.range_compression_fft_min_oversample * len(fmcw_lines[0])
+    nfft = 2**math.ceil(math.log2(nfft))
+    print(f'Using FFT length of {nfft} to get actual oversampling of {nfft/len(wnd):.3f}x')
+    rc_lines = [
+        np.fft.rfft(fmcw_line * wnd, n=nfft)
+        for fmcw_line in fmcw_lines
+    ]
+    # rc_lines = np.fft.rfft(fmcw_lines * wnd, n=nfft, axis=1)
+    
+    return rc_lines
 
 _fmcw_cache = {}
 
-def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal_speed, fmcw_start_frequency, fmcw_slope, fmcw_t, azimuth_3db_angle_deg):
+def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal_speed, fmcw_start_frequency, fmcw_slope, fmcw_t, azimuth_3db_angle_deg) -> list:
     # We cache repeating call with identical parameters to speed up the simulation
     # TODO: Make this actually hashing sensibly for caching!
     cache_key = (

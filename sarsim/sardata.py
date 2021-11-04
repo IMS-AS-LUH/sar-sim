@@ -12,7 +12,7 @@ class SarData(object):
         self.cfg: ConfigParser = ConfigParser()
         self.sim_state: simstate.SarSimParameterState = simstate.SarSimParameterState()
         self.fmcw_lines: list = []
-        self.flight_path: np.array = []
+        self.flight_path: np.ndarray = []
         self.name: str = ""
 
     @staticmethod

@@ -200,7 +200,7 @@ def write_simstate_stub_file() -> None:
 
 
 class SimImage(NamedTuple):
-    data: np.array
+    data: np.ndarray
     x0: float
     y0: float
     dx: float
