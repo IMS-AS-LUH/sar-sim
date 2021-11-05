@@ -1,7 +1,7 @@
 # type: ignore Unfortunatly, a lot of Qt stuff has incorrect type annotations :(
 
 import itertools
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
@@ -59,16 +59,15 @@ class SarGuiPlotWindowBase(QMdiSubWindow):
 
     def mark_stale(self, stale: bool = True):
         if stale:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_STALE)
+            self._layout.setBackground(SarGuiPlotWindowBase.BG_STALE)
         else:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_NORMAL)
+            self._layout.setBackground(SarGuiPlotWindowBase.BG_NORMAL)
 
-class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
-    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', variant: str = '') -> None:
-        super().__init__('Plot')
+class SarGuiImagePlotBase(SarGuiPlotWindowBase):
+    def __init__(self, title: str, aspect_lock: bool, unit_x: str = 'm', unit_y: str = 'm') -> None:
+        super().__init__(title)
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
-        self._variant = variant
 
         self._create_plot_widget()
 
@@ -79,8 +78,6 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         self._unit_x = unit_x
         self._unit_y = unit_y
 
-        # self._set_random_data()
-
     @property
     def data(self) -> np.ndarray:
         return self._data
@@ -90,15 +87,11 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         self._data = data
         self._update_data()
 
-    def set_transform(self, x0, y0, dx, dy):
+    def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
         tr = QtGui.QTransform()
         tr.translate(x0-dx/2, y0-dy/2).scale(dx, dy)
         self._data_tr = tr
         self._img.setTransform(self._data_tr)
-
-        # Update data cuts
-        if self._variant == 'azimuth_comp':
-            self._update_cuts()
 
     def _set_random_data(self):
         # Generate image data
@@ -109,12 +102,8 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         self.set_transform(0, 0, 1, 1)
         self.data = data
 
-    def do_autorange(self):
+    def do_autorange(self) -> None:
         self._hist.setLevels(-90, 0)
-        self._p1.autoRange()
-        if self._variant == 'azimuth_comp':
-            self._range_line.setValue(0)
-            self._azi_line.setValue(0)
 
     def _create_plot_widget(self):
         # Interpret image data as row-major instead of col-major
@@ -127,29 +116,6 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         # Item for displaying image data
         self._img = pg.ImageItem()
         self._p1.addItem(self._img)
-
-        # Two movable lines for "cuts" trough the data
-        if self._variant == 'azimuth_comp':
-            self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
-            self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
-            self._p1.addItem(self._range_line)
-            self._p1.addItem(self._azi_line)
-            self._range_line.setZValue(10)  # make sure line is drawn above image
-            self._azi_line.setZValue(10)
-            self._range_line.sigDragged.connect(self._update_cuts)
-            self._azi_line.sigDragged.connect(self._update_cuts)
-
-            # Line plot of the cuts
-            self._range_cut_plot: pg.PlotItem = self._layout.addPlot(row=0, col=1)
-            self._azi_cut_plot: pg.PlotItem = self._layout.addPlot(row=1, col=0)
-            self._azi_cut_plot.setFixedWidth(130)
-            self._range_cut_plot.setFixedHeight(130)
-            # self._layout.ci.layout.setRowMaximumHeight(0, 130) # set width/height of cut-plots
-            # self._layout.ci.layout.setColumnMaximumWidth(0, 130)
-            self._range_cut_plot.plot()
-            self._azi_cut_plot.plot()
-            self._range_cut_plot.setLabel('left', 'Magnitude', 'dB')
-            self._azi_cut_plot.setLabel('bottom', 'Magnitude', 'dB')
 
         # Isocurve drawing
         if isolines:
@@ -170,9 +136,6 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         self._hist.setImageItem(self._img)
         self._hist.axis.setLabel('Magnitude', 'dB')
         self._layout.addItem(self._hist, row=1, col=2)
-
-        if self._variant == 'azimuth_comp':
-            self._hist.sigLevelsChanged.connect(self._update_levels)
 
         # Draggable line for setting isocurve level
         if isolines:
@@ -198,22 +161,6 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
         # but it works for a very simple use like this.
         self._img.hoverEvent = self._image_hover_event
 
-    def _update_cuts(self):
-        if self._data is None:
-            return
-        range_curve = self._range_cut_plot.listDataItems()[0]
-        azi_curve = self._azi_cut_plot.listDataItems()[0]
-        inv_transform, _ = self._data_tr.inverted()
-        azi_pos, range_pos = inv_transform.map(self._azi_line.value(), self._range_line.value())
-        # get the real-world coordinates for the data start/end
-        rg_start, az_start = self._data_tr.map(0.5, 0.5)
-        rg_end, az_end = self._data_tr.map(self._data.shape[1]-0.5, self._data.shape[0]-0.5)
-        az_cnt, rg_cnt = self._data.shape
-        if int(range_pos) in range(self._data.shape[0]):
-            range_curve.setData(y=self._data[int(range_pos), :], x=np.linspace(rg_start, rg_end, rg_cnt))
-        if int(azi_pos) in range(self._data.shape[1]):
-            azi_curve.setData(x=self._data[:, int(azi_pos)], y=np.linspace(az_start, az_end, az_cnt)) # get real-world coordinates of data 0,0
-
     def _update_levels(self):
         if self._data is None:
             return
@@ -234,10 +181,6 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
             gfilter = self._data
             self._iso.setData(gfilter)
             self._iso2.setData(gfilter)
-        
-        # Update data cuts
-        if self._variant == 'azimuth_comp':
-            self._update_cuts()
 
         # set position and scale of image
         self._img.setTransform(self._data_tr)
@@ -267,6 +210,77 @@ class SarGuiPlotSubWindow(SarGuiPlotWindowBase):
     def set_color_preset(self, preset: str = 'jet'):
         self._hist.gradient.loadPreset(preset)  # spectrum, viridis
 
+class SarGuiRawDataWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__("Raw FMCW Data", aspect_lock=False, unit_x='m', unit_y='s')
+
+class SarGuiRangeCompressionWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__("Range Compression", aspect_lock=False, unit_x='m', unit_y='m')
+
+class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__("Azimuth Compression", aspect_lock=True, unit_x='m', unit_y='m')
+
+    def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
+        super().set_transform(x0, y0, dx, dy)
+        # Update data cuts
+        self._update_cuts()
+
+    def do_autorange(self) -> None:
+        super().do_autorange()
+        self._range_line.setValue(0)
+        self._azi_line.setValue(0)
+
+    def _create_plot_widget(self):
+        super()._create_plot_widget()
+        # Two movable lines for "cuts" trough the data
+        self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
+        self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
+        self._p1.addItem(self._range_line)
+        self._p1.addItem(self._azi_line)
+        self._range_line.setZValue(10)  # make sure line is drawn above image
+        self._azi_line.setZValue(10)
+        self._range_line.sigDragged.connect(self._update_cuts)
+        self._azi_line.sigDragged.connect(self._update_cuts)
+        self._hist.sigLevelsChanged.connect(self._update_levels)
+
+        # Line plot of the cuts
+        self._range_cut_plot: pg.PlotItem = self._layout.addPlot(row=0, col=1)
+        self._azi_cut_plot: pg.PlotItem = self._layout.addPlot(row=1, col=0)
+        self._azi_cut_plot.setFixedWidth(130)
+        self._range_cut_plot.setFixedHeight(130)
+        # self._layout.ci.layout.setRowMaximumHeight(0, 130) # set width/height of cut-plots
+        # self._layout.ci.layout.setColumnMaximumWidth(0, 130)
+        self._range_cut_plot.plot()
+        self._azi_cut_plot.plot()
+        self._range_cut_plot.setLabel('left', 'Magnitude', 'dB')
+        self._azi_cut_plot.setLabel('bottom', 'Magnitude', 'dB')
+
+    def _update_cuts(self):
+        if self._data is None:
+            return
+        range_curve = self._range_cut_plot.listDataItems()[0]
+        azi_curve = self._azi_cut_plot.listDataItems()[0]
+        inv_transform, _ = self._data_tr.inverted()
+        azi_pos, range_pos = inv_transform.map(self._azi_line.value(), self._range_line.value())
+        # get the real-world coordinates for the data start/end
+        rg_start, az_start = self._data_tr.map(0.5, 0.5)
+        rg_end, az_end = self._data_tr.map(self._data.shape[1]-0.5, self._data.shape[0]-0.5)
+        az_cnt, rg_cnt = self._data.shape
+        if int(range_pos) in range(self._data.shape[0]):
+            range_curve.setData(y=self._data[int(range_pos), :], x=np.linspace(rg_start, rg_end, rg_cnt))
+        if int(azi_pos) in range(self._data.shape[1]):
+            azi_curve.setData(x=self._data[:, int(azi_pos)], y=np.linspace(az_start, az_end, az_cnt)) # get real-world coordinates of data 0,0
+
+    def _update_data(self):
+        super()._update_data()
+        # Update data cuts
+        self._update_cuts()
+
+class SarGuiAutofocusResultWindow(SarGuiAzimuthCompressionWindow):
+    def __init__(self) -> None:
+        super().__init__("Autofocus Result", aspect_lock=True, unit_x='m', unit_y='m')
 
 class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
     def __init__(self, state: simstate.SarSimParameterState):
@@ -490,17 +504,13 @@ class SarGuiMainFrame(QMainWindow):
         self._create_mdi()
         self._create_status_bar()
 
-        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', variant='raw')
-        self._plot_window_rc = SarGuiPlotSubWindow(False, variant='range_comp')
-        self._plot_window_ac = SarGuiPlotSubWindow(variant='azimuth_comp')
+        self._plot_window_raw = SarGuiRawDataWindow()
+        self._plot_window_rc = SarGuiRangeCompressionWindow()
+        self._plot_window_ac = SarGuiAzimuthCompressionWindow()
         self._plot_fpath = SarGuiFlightPathWindow(self._state)
 
-        self._plot_window_raw.setWindowTitle('Raw FMCW Data')
-        self._plot_window_rc.setWindowTitle('Range Compression')
-        self._plot_window_ac.setWindowTitle('Azimuth Compression')
-
         # Add in order of processing
-        self._windows = [
+        self._windows: List[SarGuiPlotWindowBase] = [
             self._plot_window_raw,
             self._plot_window_rc,
             self._plot_window_ac,
@@ -697,7 +707,7 @@ class SarGuiMainFrame(QMainWindow):
     def _show_results(self, result: simjob.SimResult):
         print('GUI: Updating Plots')
 
-        def _assign(win: SarGuiPlotSubWindow, img: simstate.SimImage):
+        def _assign(win: SarGuiImagePlotBase, img: simstate.SimImage):
             magimg = 20 * np.log10(np.clip(np.abs(img.data), 1e-30, None))
             win.data = np.clip(magimg - np.max(magimg), -240, None)
             #win.set_transform(img.x0, img.y0, img.dx, img.dy)
