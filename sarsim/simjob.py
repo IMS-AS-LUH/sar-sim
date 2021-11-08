@@ -1,5 +1,6 @@
 import cmath
 import math
+from math import pi
 from typing import Callable, NamedTuple
 
 import numpy as np
@@ -25,6 +26,7 @@ class SimResult(NamedTuple):
     raw: simstate.SimImage
     rc: simstate.SimImage
     ac: simstate.SimImage
+    af: simstate.SimImage
     fpath_exact: np.ndarray
     fpath_distorted: np.ndarray
 
@@ -123,6 +125,11 @@ def run_sim(state: simstate.SarSimParameterState,
     timestamper.tic('Azimuth Compression')
     image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines)
 
+    ## Autofocus
+    progress_callback(.75, 'Autofocus')
+    timestamper.tic('Autofocus')
+    af_image = _autofocus_pafo(state, rc_lines, image, flight_path)
+
     timestamper.toc()
     progress_callback(1, 'Finished')
     return SimResult(
@@ -132,17 +139,20 @@ def run_sim(state: simstate.SarSimParameterState,
                              azimuth_x[0], r_vector[0], azimuth_x[1] - azimuth_x[0], r_vector[1] - r_vector[0]),
         ac=simstate.SimImage(np.array(image),
                              image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
+        af=simstate.SimImage(np.array(af_image),
+                             image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
         fpath_exact=exact_flight_path,
         fpath_distorted=distorted_fligh_path,
     )
 
-def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray):
+def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray, single_pulse_mode: bool = False):
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
     ac_wnd = state.azimuth_compression_window.factory(len(flight_path), False, state.azimuth_compression_window_parameter)
 
-    print(f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
+    if not single_pulse_mode:
+        print(f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
 
     image = np.zeros((state.image_count_x, state.image_count_y), dtype=complex)
 
@@ -337,3 +347,82 @@ def _make_flight_path(state: simstate.SarSimParameterState) -> np.ndarray:
     scaled_offsets = unscaled_offsets * np.array([state.flight_wiggle_amplitude_azimuth, state.flight_wiggle_amplitude_range, state.flight_wiggle_amplitude_height])
     path = path + state.flight_wiggle_global_scale * scaled_offsets
     return path
+
+def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> np.ndarray:
+    """Perform the PAFO autofocus.
+    This implementation is currently CUDA-only
+    :param rounds: Number of overall autofocs iterations (normally 1)
+    :param samples: Number of parallel samples to use in each iteration (usually 8)
+    :param iterations: Number of sampling iterations per phase (normally 2)
+    :note: based on https://git.ims-as.uni-hannover.de/sar/stuff/theory/-/blob/master/matlab/runSoftwarePafo.m and BA Fallnich
+    """
+    assert samples % 2 == 0, "samples must be even"
+    np.seterr('raise')
+    # TODO: Move to CUDA
+    # TODO: Port over the "valid" variable to only consider pixels in the sum etc. that are not exluded by the beamlimit. This could make things faster
+    # make ac_image linear
+    ac_image = np.ravel(ac_image)
+
+    optimal_phases = np.zeros((rounds, len(rc_lines)))
+    # AF can have multiple overall iterations
+    for round in range(rounds):
+        # Back-Project individual apertures and then find correct focus phase
+        for az_index in range(len(rc_lines)):
+            # Generate single pulse image
+            _, _, single_pulse, _ = _azimuth_compression(state, True, flight_path[[az_index]], rc_lines[[az_index]], single_pulse_mode=True)
+            single_pulse = np.ravel(single_pulse) # make linear
+
+            # We do iterative runs of "parallel" phase search
+
+            # Loop over the sampling rounds
+            last_optimum = math.nan
+            min_index = -1
+            sample_spacing = math.nan
+            metric_sums = np.array([])
+            assert iterations > 1
+            for iteration in range(iterations):
+                # Determine points to evaluate
+                sample_points = np.array([])
+                sample_spacing = 2*pi / ((samples * (samples-2)) ** iteration)
+                if iteration == 0:
+                    sample_points = -pi + np.arange(samples) * sample_spacing
+                else:
+                    assert not math.isnan(last_optimum)
+                    index_center = samples // 2
+                    indices = np.arange(-index_center, index_center+1) # -N/2, ..., -1, 0, 1, ..., N/2
+                    assert len(indices) == samples + 1
+                    sample_points = last_optimum + indices * sample_spacing
+
+                # Get the "subtract, then add rotated" factors
+                candidate_factors = np.expm1(1j * sample_points)
+                # Build Image and apply sharpnes metric (with summing)
+                metric_sums = -np.sum(np.abs(ac_image + single_pulse * candidate_factors[:, np.newaxis]) ** 4, axis=1)
+                assert metric_sums.shape[0] == len(candidate_factors)
+                # Minimum point
+                min_index = np.argmin(metric_sums)
+                last_optimum = sample_points[min_index]
+
+            # make sure the minimum is not on the edge
+            if min_index == 0:
+                min_index = 1
+            if min_index == samples:
+                min_index = samples - 1
+            
+            interpol_indices = [min_index-1, min_index, min_index+1]
+            interpol_values = metric_sums[interpol_indices]
+            
+            # Parabolic interpolation
+            if max(interpol_values) - min(interpol_values) > 1e-4:
+                optimal_phase = last_optimum + sample_spacing/2 - sample_spacing*(interpol_values[2]-interpol_values[1])/(interpol_values[0]+interpol_values[2]-2*interpol_values[1])
+            else: #parabola degenerated to a line
+                optimal_phase = last_optimum
+
+            # Apply:
+            correction_factor = np.expm1(1j*optimal_phase)
+            ac_image = ac_image + single_pulse * correction_factor
+            optimal_phases[round, az_index] = optimal_phase
+
+            if az_index % 8 == 0:
+                print(f"{round:4}.{az_index:4} ({100 * (az_index/(len(rc_lines)*rounds)) + round/rounds:.3} %) of PAFO")
+
+    return ac_image
