@@ -158,12 +158,12 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
     r_scale = r_vector[1] - r_vector[0]
     r_idx_max_sub1 = len(rc_lines[0]) - 2
 
+    beamlimit = state.azimuth_compression_beam_limit / 180 * math.pi
+
     if ac_use_cuda:
         nx = len(image_x)
         ny = len(image_y)
         na = len(flight_path)
-
-        beamlimit = state.azimuth_compression_beam_limit / 180 * math.pi
 
         @cuda.jit() # type: ignore
         def ac_kernel(flight_path_array, image, rc_lines):
@@ -212,18 +212,19 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
                     delta_y = y - flight_point[1]
                     delta_z = 0 - flight_point[2]
                     delta_r = math.sqrt(delta_x ** 2 + delta_y ** 2 + delta_z ** 2)
+                    phi_a = math.atan2(delta_x, delta_y)
                     pc = PC1 * delta_r + PC2 * delta_r ** 2
                     # sample = np.interp(delta_r, r_vector, rc_lines[ia])
                     sample_index = (delta_r - r0) / r_scale
                     sample_int = math.floor(sample_index)
                     sample_frac = sample_index - sample_int
-                    if sample_int < 0 or sample_int > r_idx_max_sub1:
+                    if sample_int < 0 or sample_int > r_idx_max_sub1 or abs(phi_a) > beamlimit:
                         sample = complex(0, 0)
                     else:
                         sample_int = int(sample_int)
-                        sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][
-                            sample_int + 1] * sample_frac
+                        sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][sample_int + 1] * sample_frac
                     image[ix][iy] = image[ix][iy] + sample * cmath.exp(complex(0, pc)) * a
+    
     return image_x, image_y, image, r_vector
 
 def _range_compression(state: simstate.SarSimParameterState, fmcw_lines: list) -> np.ndarray:
