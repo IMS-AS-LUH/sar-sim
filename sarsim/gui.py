@@ -373,7 +373,10 @@ class SarGuiSimWorker(QObject):
 
 
 class SarGuiParameterDock():
-    def __init__(self, state: simstate.SarSimParameterState):
+    def __init__(self, win: 'SarGuiMainFrame'):
+        # We pass in the window, not the state itself: The state could be exchanged by a new instance, when
+        # a capture is loaded. When the state is passed directly, it will be captured by the callbacks, so the
+        # controls would still update the old instance.
         self.widgets = {} # Save all widget in a dict, so that we can update them from update_from_state()
 
         self.tab_control = QTabWidget()
@@ -385,7 +388,7 @@ class SarGuiParameterDock():
             else:
                 return "Uncategorized"
 
-        params_by_catergory = itertools.groupby(sorted(state.get_parameters(), key=get_category), key=get_category)
+        params_by_catergory = itertools.groupby(sorted(win._state.get_parameters(), key=get_category), key=get_category)
         for category, parameters in params_by_catergory:
             form = QFormLayout()
             form.setRowWrapPolicy(QFormLayout.WrapAllRows)
@@ -398,7 +401,7 @@ class SarGuiParameterDock():
                 box = None
                 if parameter.type.type is float:
                     factor, unit = siunits.choose_si_scale(
-                        parameter.default or state.get_value(parameter),
+                        parameter.default or win._state.get_value(parameter),
                         parameter.type.unit)
                     box = QDoubleSpinBox()
                     box.setDecimals(3)
@@ -412,8 +415,8 @@ class SarGuiParameterDock():
                         box.setMinimum(parameter.type.min / factor)
                     if parameter.type.max is not None:
                         box.setMaximum(parameter.type.max / factor)
-                    box.setValue(state.get_value(parameter) / factor)
-                    box.valueChanged.connect(lambda v, p=parameter, f=factor: state.set_value(p, v*f))
+                    box.setValue(win._state.get_value(parameter) / factor)
+                    box.valueChanged.connect(lambda v, p=parameter, f=factor: win._state.set_value(p, v*f))
 
                 elif parameter.type.type is int:
                     box = QSpinBox()
@@ -426,11 +429,11 @@ class SarGuiParameterDock():
                         box.setMinimum(parameter.type.min)
                     if parameter.type.max is not None:
                         box.setMaximum(parameter.type.max)
-                    box.setValue(state.get_value(parameter))
-                    box.valueChanged.connect(lambda v, p=parameter: state.set_value(p, v))
+                    box.setValue(win._state.get_value(parameter))
+                    box.valueChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
 
                 elif parameter.type.type is str or parameter.type.choices is not None:
-                    value = state.get_value(parameter)
+                    value = win._state.get_value(parameter)
                     choices = parameter.type.choices
                     if value is None:
                         value = ''
@@ -439,11 +442,11 @@ class SarGuiParameterDock():
                         for choice in choices.keys():
                             box.addItem(choice)
                         box.setCurrentText(self._get_dict_key_by_value(choices, value))
-                        box.currentTextChanged.connect(lambda v, p=parameter: state.set_value(p, choices[v]))
+                        box.currentTextChanged.connect(lambda v, p=parameter: win._state.set_value(p, choices[v]))
                     else: # normal string parameter
                         box = QLineEdit()
                         box.setText(value)
-                        box.textChanged.connect(lambda v, p=parameter: state.set_value(p, v))
+                        box.textChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
                     tool_tip = []
                     if parameter.symbol is not None:
                         tool_tip.append(f'{parameter.symbol}')
@@ -454,8 +457,8 @@ class SarGuiParameterDock():
 
                 elif parameter.type.type is bool:
                     box = QCheckBox()
-                    box.setChecked(state.get_value(parameter))
-                    box.stateChanged.connect(lambda v, p=parameter: state.set_value(p, v == QtCore.Qt.CheckState.Checked))
+                    box.setChecked(win._state.get_value(parameter))
+                    box.stateChanged.connect(lambda v, p=parameter: win._state.set_value(p, v == QtCore.Qt.CheckState.Checked))
 
                 else:
                     print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
@@ -667,7 +670,7 @@ class SarGuiMainFrame(QMainWindow):
 
         stack = QBoxLayout(QBoxLayout.Direction.TopToBottom)
 
-        param_dock = SarGuiParameterDock(self._state)
+        param_dock = SarGuiParameterDock(self)
 
         scroll = QScrollArea(self)
         scroll.setWidget(param_dock.get_widget())
