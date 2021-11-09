@@ -500,7 +500,6 @@ class SarGuiParameterDock():
                 continue
             box = self.widgets[parameter.name]
             value = state.get_value(parameter)
-            print(parameter.type.type)
             if parameter.type.type in [float, int]:
                 factor = box.property('si_factor')
                 box.setValue(value / factor)
@@ -537,14 +536,20 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_raw = SarGuiRawDataWindow()
         self._plot_window_rc = SarGuiRangeCompressionWindow()
         self._plot_window_ac = SarGuiAzimuthCompressionWindow()
+        self._plot_window_af = SarGuiAutofocusResultWindow()
         self._plot_fpath = SarGuiFlightPathWindow(self._state)
+
+        # Connect the level controls of AC and AF together
+        self._plot_window_ac._hist.sigLevelsChanged.connect(lambda h: self._plot_window_af._hist.setLevels(*h.getLevels()))
+        self._plot_window_af._hist.sigLevelsChanged.connect(lambda h: self._plot_window_ac._hist.setLevels(*h.getLevels()))
 
         # Add in order of processing
         self._windows: List[SarGuiPlotWindowBase] = [
             self._plot_window_raw,
             self._plot_window_rc,
             self._plot_window_ac,
-            self._plot_fpath
+            self._plot_fpath,
+            self._plot_window_af,
         ]
         for win in self._windows:
             self.mdi.addSubWindow(win)
@@ -625,6 +630,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_raw.set_color_preset(self._color_preset)
         self._plot_window_rc.set_color_preset(self._color_preset)
         self._plot_window_ac.set_color_preset(self._color_preset)
+        self._plot_window_af.set_color_preset(self._color_preset)
         pass
 
     def _load_param_file(self):
@@ -746,6 +752,7 @@ class SarGuiMainFrame(QMainWindow):
         _assign(self._plot_window_raw, result.raw)
         _assign(self._plot_window_rc, result.rc)
         _assign(self._plot_window_ac, result.ac)
+        _assign(self._plot_window_af, result.af)
         self._plot_fpath.data_exact = result.fpath_exact
         self._plot_fpath.data_distorted = result.fpath_distorted
         for win in self._windows:
