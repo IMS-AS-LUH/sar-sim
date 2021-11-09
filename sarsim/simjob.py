@@ -194,7 +194,7 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
     PC1 = -4 * math.pi * state.fmcw_start_frequency / SIGNAL_SPEED
     PC2 = 4 * math.pi * fmcw_slope / (SIGNAL_SPEED ** 2)
 
-    r0 = 0
+    r0 = state.r0
     fif = (state.fmcw_adc_frequency / 2) / (2 * fmcw_slope) * SIGNAL_SPEED
     rmax = r0 + fif
     r_vector = np.linspace(r0, rmax, len(rc_lines[0]))

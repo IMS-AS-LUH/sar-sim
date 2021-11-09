@@ -36,6 +36,7 @@ class SarData(object):
         # *** Fixed parameters not in cfg file ***
         sim.fmcw_adc_frequency = 1.0e6  # Implied from Sensor type
         sim.azimuth_3db_angle_deg = 30  # Guessed somewhat, TODO: Measure some day
+        sim.r0 = -0.052 # Implied from Sensor type
 
         # *** Load Compatible Parameters ***
         sim.fmcw_start_frequency = cfg['params'].getfloat('start_frequency')

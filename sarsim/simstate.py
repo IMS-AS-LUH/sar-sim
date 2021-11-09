@@ -80,6 +80,10 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_COUNT, 'image_count_x', 'n_x', 501, category='Azimuth Compression'),
     SimParameter(_COUNT, 'image_count_y', 'n_y', 501, category='Azimuth Compression'),
 
+    # this is in Az.Comp. because it currently only affects that. It is not used in the actual FMCW simulation
+    # is therefore should be 0 for simulated data, and -0.052 for data from the RUB sensor
+    SimParameter(_METERS, 'r0', 'r0', 0, category='Azimuth Compression'),
+
     SimParameter(SimParameterType(float, unit='x', min=1, max=32), 'range_compression_fft_min_oversample', 'rc_fft_os', 16, category='Range Compression'),
     SimParameter(_WINDOW, 'range_compression_window', 'rc_wnd', SUPPORTED_WINDOWS['Rect'], category='Range Compression'),
     SimParameter(_WINDOW_PARAM, 'range_compression_window_parameter', 'rc_wnd_param', 0, category='Range Compression'),
