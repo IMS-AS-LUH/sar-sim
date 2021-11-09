@@ -51,7 +51,7 @@ class SarData(object):
         sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
 
         # Guessed somewhat, TODO: Qualify sensible settings
-        sim.azimuth_compression_window = SUPPORTED_WINDOWS['Blackman']
+        sim.azimuth_compression_window = SUPPORTED_WINDOWS['Rect']
         sim.range_compression_window = SUPPORTED_WINDOWS['Tukey']
         sim.range_compression_window_parameter = 0.25
 
