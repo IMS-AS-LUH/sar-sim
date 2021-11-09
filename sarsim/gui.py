@@ -104,6 +104,7 @@ class SarGuiImagePlotBase(SarGuiPlotWindowBase):
 
     def do_autorange(self) -> None:
         self._hist.setLevels(-90, 0)
+        self._p1.autoRange()
 
     def _create_plot_widget(self):
         # Interpret image data as row-major instead of col-major
