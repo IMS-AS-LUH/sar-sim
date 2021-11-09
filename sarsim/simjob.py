@@ -1,7 +1,7 @@
 import cmath
 import math
 from math import pi
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Tuple, Union
 
 import numpy as np
 import scipy.signal as signal
@@ -29,6 +29,7 @@ class SimResult(NamedTuple):
     af: simstate.SimImage
     fpath_exact: np.ndarray
     fpath_distorted: np.ndarray
+    optimal_phases: np.ndarray
 
 def run_sim(state: simstate.SarSimParameterState,
             scene: simscene.SimulationScene,
@@ -128,7 +129,7 @@ def run_sim(state: simstate.SarSimParameterState,
     ## Autofocus
     progress_callback(.75, 'Autofocus')
     timestamper.tic('Autofocus')
-    af_image = _autofocus_pafo(state, rc_lines, image, flight_path)
+    af_image, optimal_phases = _autofocus_pafo(state, rc_lines, image, flight_path)
 
     timestamper.toc()
     progress_callback(1, 'Finished')
@@ -143,6 +144,7 @@ def run_sim(state: simstate.SarSimParameterState,
                              image_x[0], image_y[0], image_x[1] - image_x[0], image_y[1] - image_y[0]),
         fpath_exact=exact_flight_path,
         fpath_distorted=distorted_fligh_path,
+        optimal_phases=optimal_phases,
     )
 
 if CUDA_NUMBA_AVAILABLE:
@@ -176,7 +178,8 @@ if CUDA_NUMBA_AVAILABLE:
             temp = temp + sample * cmath.exp(complex(0, pc)) * a
         image[ix][iy] = temp
 
-def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray, single_pulse_mode: bool = False):
+def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray,
+        single_pulse_mode: bool = False) -> Union[np.ndarray, cuda.cudadrv.devicearray.DeviceNDArray]: # type: ignore
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
@@ -185,7 +188,7 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
     if not single_pulse_mode:
         print(f'Image: {state.image_count_x}x{state.image_count_y} Pixels spaced {image_x[1] - image_x[0]:.3f}x{image_y[1] - image_y[0]:.3f}m.')
 
-    image = np.zeros((state.image_count_x, state.image_count_y), dtype=complex)
+    image = np.empty((state.image_count_x, state.image_count_y), dtype=complex)
 
     fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
     PC1 = -4 * math.pi * state.fmcw_start_frequency / SIGNAL_SPEED
@@ -213,19 +216,24 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
         image_x_gpu = cuda.to_device(image_x)
         image_y_gpu = cuda.to_device(image_y)
         ac_wnd_gpu = cuda.to_device(ac_wnd)
-        image_gpu = cuda.device_array_like(image) # empty, because it is read-only
+        image_gpu = cuda.device_array_like(image) # empty, because it is write-only
 
         blocksize = (16, 16)
         gridsize = (math.ceil(nx / blocksize[0]), math.ceil(ny / blocksize[1]))
         _ac_kernel[gridsize, blocksize](flight_path_gpu, image_gpu, rc_lines_gpu, image_x_gpu, image_y_gpu, PC1, PC2, r0, # type: ignore
             r_scale, r_idx_max_sub1, beamlimit, ac_wnd_gpu)
         
-        # copy back image
-        image_gpu.copy_to_host(image)
+        if not single_pulse_mode:
+            # copy back image
+            image_gpu.copy_to_host(image)
+        else:
+            # return the GPU memory handle
+            image = image_gpu
     else:
         for ia in range(len(flight_path)):
             flight_point = flight_path[ia]
             a = ac_wnd[ia]
+            image[ix][iy] = complex(0, 0)
             for ix in range(len(image_x)):
                 x = image_x[ix]
                 for iy in range(len(image_y)):
@@ -265,7 +273,7 @@ def _range_compression(state: simstate.SarSimParameterState, fmcw_lines: list) -
     nfft = state.range_compression_fft_min_oversample * len(fmcw_lines[0])
     nfft = 2**math.ceil(math.log2(nfft))
     print(f'Using FFT length of {nfft} to get actual oversampling of {nfft/len(wnd):.3f}x')
-    rc_lines = [
+    rc_lines = [ # note: yes, this could be done in one numpy call, but that is actually not much faster
         np.fft.rfft(fmcw_line * wnd, n=nfft)
         for fmcw_line in fmcw_lines
     ]
@@ -360,7 +368,26 @@ def _make_flight_path(state: simstate.SarSimParameterState) -> np.ndarray:
     path = path + state.flight_wiggle_global_scale * scaled_offsets
     return path
 
-def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> np.ndarray:
+if CUDA_NUMBA_AVAILABLE:
+    @cuda.jit() # type: ignore
+    def _af_pafo_cost_function_kernel(ac_image, single_pulse, candidate_factor: complex, out):
+        ix = cuda.grid(1) # type: ignore
+        if ix >= len(ac_image): # type: ignore
+            return
+        out[ix] = abs(ac_image[ix] + single_pulse[ix] * candidate_factor) ** 4 # Intensity squared cost function
+
+    @cuda.reduce # type: ignore
+    def _af_pafo_reduce(a, b):
+        return a + b
+
+    @cuda.jit # type: ignore
+    def _af_pafo_apply_kernel(ac_image, single_pulse, correction_factor: complex):
+        ix = cuda.grid(1) # type: ignore
+        if ix >= len(ac_image): # type: ignore
+            return
+        ac_image[ix] = ac_image[ix] + single_pulse[ix] * correction_factor
+
+def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
     """Perform the PAFO autofocus.
     This implementation is currently CUDA-only
     :param rounds: Number of overall autofocs iterations (normally 1)
@@ -370,10 +397,12 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
     """
     assert samples % 2 == 0, "samples must be even"
     np.seterr('raise')
-    # TODO: Move to CUDA
-    # TODO: Port over the "valid" variable to only consider pixels in the sum etc. that are not exluded by the beamlimit. This could make things faster
-    # make ac_image linear
-    ac_image = np.ravel(ac_image)
+    original_shape = ac_image.shape
+    # make ac_image linear, make copy beacuse it will be changed in this function
+    ac_image = np.ravel(ac_image).copy()
+    if CUDA_NUMBA_AVAILABLE:
+        ac_image_gpu = cuda.to_device(ac_image)
+        cost_function_out_gpu = cuda.device_array(ac_image.shape, dtype=float)
 
     optimal_phases = np.zeros((rounds, len(rc_lines)))
     # AF can have multiple overall iterations
@@ -381,8 +410,9 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
         # Back-Project individual apertures and then find correct focus phase
         for az_index in range(len(rc_lines)):
             # Generate single pulse image
-            _, _, single_pulse, _ = _azimuth_compression(state, True, flight_path[[az_index]], rc_lines[[az_index]], single_pulse_mode=True)
-            single_pulse = np.ravel(single_pulse) # make linear
+            _, _, single_pulse, _ = _azimuth_compression(state, CUDA_NUMBA_AVAILABLE, flight_path[[az_index]], rc_lines[[az_index]], single_pulse_mode=True)
+            # note: in CUDA mode, singe_pulse is now a device array ("single_pulse_gpu")!
+            single_pulse = single_pulse.ravel() # make linear
 
             # We do iterative runs of "parallel" phase search
 
@@ -408,7 +438,17 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
                 # Get the "subtract, then add rotated" factors
                 candidate_factors = np.expm1(1j * sample_points)
                 # Build Image and apply sharpnes metric (with summing)
-                metric_sums = -np.sum(np.abs(ac_image + single_pulse * candidate_factors[:, np.newaxis]) ** 4, axis=1)
+                if CUDA_NUMBA_AVAILABLE:
+                    blocksize = (16,)
+                    gridsize = (math.ceil(len(ac_image) / blocksize[0]),)
+
+                    metric_sums = np.empty(candidate_factors.shape)                    
+                    for idx, factor in enumerate(candidate_factors):
+                        _af_pafo_cost_function_kernel[gridsize, blocksize](ac_image_gpu, single_pulse, factor, cost_function_out_gpu) # type: ignore
+                        metric_sums[idx] = -_af_pafo_reduce(cost_function_out_gpu) # type: ignore
+
+                else:
+                    metric_sums = -np.sum(np.abs(ac_image + single_pulse * candidate_factors[:, np.newaxis]) ** 4, axis=1)
                 assert metric_sums.shape[0] == len(candidate_factors)
                 # Minimum point
                 min_index = np.argmin(metric_sums)
@@ -431,10 +471,19 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
 
             # Apply:
             correction_factor = np.expm1(1j*optimal_phase)
-            ac_image = ac_image + single_pulse * correction_factor
+            if CUDA_NUMBA_AVAILABLE:
+                blocksize = (16,)
+                gridsize = (math.ceil(len(ac_image) / blocksize[0]),)
+                _af_pafo_apply_kernel[gridsize, blocksize](ac_image_gpu, single_pulse, correction_factor) # type: ignore
+            else:
+                ac_image = ac_image + single_pulse * correction_factor
             optimal_phases[round, az_index] = optimal_phase
 
             if az_index % 8 == 0:
                 print(f"{round:4}.{az_index:4} ({100 * (az_index/(len(rc_lines)*rounds)) + round/rounds:.3} %) of PAFO")
 
-    return ac_image
+    if CUDA_NUMBA_AVAILABLE:
+        ac_image_gpu.copy_to_host(ac_image) # type: ignore
+
+    ac_image = np.reshape(ac_image, original_shape)
+    return (ac_image, optimal_phases)
