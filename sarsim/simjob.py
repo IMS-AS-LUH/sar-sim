@@ -395,7 +395,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
             for iteration in range(iterations):
                 # Determine points to evaluate
                 sample_points = np.array([])
-                sample_spacing = 2*pi / ((samples * (samples-2)) ** iteration)
+                sample_spacing = 2*pi / (samples * (samples-2) ** iteration)
                 if iteration == 0:
                     sample_points = -pi + np.arange(samples) * sample_spacing
                 else:
