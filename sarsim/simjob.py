@@ -145,6 +145,37 @@ def run_sim(state: simstate.SarSimParameterState,
         fpath_distorted=distorted_fligh_path,
     )
 
+if CUDA_NUMBA_AVAILABLE:
+    @cuda.jit() # type: ignore
+    def _ac_kernel(flight_path_array, image, rc_lines, image_x, image_y, PC1, PC2, r0, r_scale, r_idx_max_sub1, beamlimit, ac_wnd):
+        ix, iy = cuda.grid(2) # type: ignore
+        if ix >= len(image_x) or iy >= len(image_y):
+            return
+        temp = complex(0, 0)
+        x = image_x[ix]
+        y = image_y[iy]
+        for ia in range(0, len(flight_path_array)):
+            flight_point = flight_path_array[ia]
+            a = ac_wnd[ia]
+
+            delta_x = x - flight_point[0]
+            delta_y = y - flight_point[1]
+            delta_z = 0 - flight_point[2]
+            delta_r = math.sqrt(delta_x ** 2 + delta_y ** 2 + delta_z ** 2)
+            phi_a = math.atan2(delta_x, delta_y)
+            pc = PC1 * delta_r + PC2 * delta_r ** 2
+            # sample = np.interp(delta_r, r_vector, rc_lines[ia])
+            sample_index = (delta_r - r0) / r_scale
+            sample_int = math.floor(sample_index)
+            sample_frac = sample_index - sample_int
+            if sample_int < 0 or sample_int > r_idx_max_sub1 or abs(phi_a) > beamlimit:
+                sample = complex(0, 0)
+            else:
+                sample_int = int(sample_int)
+                sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][sample_int + 1] * sample_frac
+            temp = temp + sample * cmath.exp(complex(0, pc)) * a
+        image[ix][iy] = temp
+
 def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray, single_pulse_mode: bool = False):
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
@@ -173,43 +204,24 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
     if ac_use_cuda:
         nx = len(image_x)
         ny = len(image_y)
-        na = len(flight_path)
 
-        @cuda.jit() # type: ignore
-        def ac_kernel(flight_path_array, image, rc_lines):
-            ix, iy = cuda.grid(2) # type: ignore
-            if ix >= nx or iy >= ny:
-                return
-            temp = complex(0, 0)
-            x = image_x[ix]
-            y = image_y[iy]
-            for ia in range(0, na):
-                flight_point = flight_path_array[ia]
-                a = ac_wnd[ia]
-
-                delta_x = x - flight_point[0]
-                delta_y = y - flight_point[1]
-                delta_z = 0 - flight_point[2]
-                delta_r = math.sqrt(delta_x ** 2 + delta_y ** 2 + delta_z ** 2)
-                phi_a = math.atan2(delta_x, delta_y)
-                pc = PC1 * delta_r + PC2 * delta_r ** 2
-                # sample = np.interp(delta_r, r_vector, rc_lines[ia])
-                sample_index = (delta_r - r0) / r_scale
-                sample_int = math.floor(sample_index)
-                sample_frac = sample_index - sample_int
-                if sample_int < 0 or sample_int > r_idx_max_sub1 or abs(phi_a) > beamlimit:
-                    sample = complex(0, 0)
-                else:
-                    sample_int = int(sample_int)
-                    sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][sample_int + 1] * sample_frac
-                temp = temp + sample * cmath.exp(complex(0, pc)) * a
-            image[ix][iy] = temp
+        # If we just pass the numpy arrays to the GPU kernel, Numba will copy the
+        # results back, even if they are unchanged. We manually allocate and copy
+        # the memory here, to avoid this
+        flight_path_gpu = cuda.to_device(flight_path)
+        rc_lines_gpu = cuda.to_device(rc_lines)
+        image_x_gpu = cuda.to_device(image_x)
+        image_y_gpu = cuda.to_device(image_y)
+        ac_wnd_gpu = cuda.to_device(ac_wnd)
+        image_gpu = cuda.device_array_like(image) # empty, because it is read-only
 
         blocksize = (16, 16)
         gridsize = (math.ceil(nx / blocksize[0]), math.ceil(ny / blocksize[1]))
-        rc_lines_array = np.array(rc_lines)
-        ac_kernel[gridsize, blocksize](flight_path, image, rc_lines_array) # type: ignore
-
+        _ac_kernel[gridsize, blocksize](flight_path_gpu, image_gpu, rc_lines_gpu, image_x_gpu, image_y_gpu, PC1, PC2, r0, # type: ignore
+            r_scale, r_idx_max_sub1, beamlimit, ac_wnd_gpu)
+        
+        # copy back image
+        image_gpu.copy_to_host(image)
     else:
         for ia in range(len(flight_path)):
             flight_point = flight_path[ia]
