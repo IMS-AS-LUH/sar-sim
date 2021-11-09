@@ -128,8 +128,9 @@ def run_sim(state: simstate.SarSimParameterState,
 
     ## Autofocus
     progress_callback(.75, 'Autofocus')
+    af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
     timestamper.tic('Autofocus')
-    af_image, optimal_phases = _autofocus_pafo(state, rc_lines, image, flight_path)
+    af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path)
 
     timestamper.toc()
     progress_callback(1, 'Finished')
@@ -387,7 +388,8 @@ if CUDA_NUMBA_AVAILABLE:
             return
         ac_image[ix] = ac_image[ix] + single_pulse[ix] * correction_factor
 
-def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
+def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Callable[[float], None], rc_lines: np.ndarray,
+        ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
     """Perform the PAFO autofocus.
     This implementation is currently CUDA-only
     :param rounds: Number of overall autofocs iterations (normally 1)
@@ -480,7 +482,10 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, rc_lines: np.ndarray, 
             optimal_phases[round, az_index] = optimal_phase
 
             if az_index % 8 == 0:
-                print(f"{round:4}.{az_index:4} ({100 * (az_index/(len(rc_lines)*rounds)) + round/rounds:.3} %) of PAFO")
+                progress = (az_index/(len(rc_lines)*rounds)) + round/rounds
+                if progress_callback:
+                    progress_callback(progress)
+                # print(f"{round:4}.{az_index:4} ({100 * progress:.3} %) of PAFO")
 
     if CUDA_NUMBA_AVAILABLE:
         ac_image_gpu.copy_to_host(ac_image) # type: ignore
