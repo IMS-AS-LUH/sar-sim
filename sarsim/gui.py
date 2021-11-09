@@ -438,7 +438,7 @@ class SarGuiParameterDock():
                         box = QComboBox()
                         for choice in choices.keys():
                             box.addItem(choice)
-                        box.setCurrentText(list(choices.keys())[list(choices.values()).index(value)])
+                        box.setCurrentText(self._get_dict_key_by_value(choices, value))
                         box.currentTextChanged.connect(lambda v, p=parameter: state.set_value(p, choices[v]))
                     else: # normal string parameter
                         box = QLineEdit()
@@ -464,23 +464,31 @@ class SarGuiParameterDock():
                 form.addRow(parameter.human_name(), box)
                 self.widgets[parameter.name] = box
 
+    @classmethod
+    def _get_dict_key_by_value(cls, d, v):
+        return list(d.keys())[list(d.values()).index(v)]
+
     def get_widget(self) -> QTabWidget:
         return self.tab_control
 
     def update_from_state(self, state: simstate.SarSimParameterState) -> None:
         for parameter in state.get_parameters():
             if parameter.name not in self.widgets:
+                print(f"Note: Ignoring unknown parameter {parameter.name}")
                 continue
             box = self.widgets[parameter.name]
             value = state.get_value(parameter)
+            print(parameter.type.type)
             if parameter.type.type in [float, int]:
                 factor = box.property('si_factor')
                 box.setValue(value / factor)
-            elif parameter.type.type is str:
+            elif parameter.type.type is str or parameter.type.choices is not None:
                 if isinstance(box, QComboBox):
-                    box.setCurrentText(state.get_value(parameter))
+                    box.setCurrentText(self._get_dict_key_by_value(parameter.type.choices, value))
                 else:
-                    box.setText(state.get_value(parameter))
+                    box.setText(value)
+            elif parameter.type.type is bool:
+                box.setChecked(value)
             else:
                 raise NotImplementedError("Update routine missing!")
 
