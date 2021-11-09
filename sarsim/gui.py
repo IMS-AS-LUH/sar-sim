@@ -44,10 +44,10 @@ pg.graphicsItems.GradientEditorItem.Gradients['invpaperjet'] = {
     ], 'mode': 'rgb'}
 
 class SarGuiPlotWindowBase(QMdiSubWindow):
-    def __init__(self, title):
+    def __init__(self):
         super().__init__()
 
-        self.setWindowTitle(title)
+        self.setWindowTitle(self.get_title())
 
         self._layout = pg.GraphicsLayoutWidget()
 
@@ -63,9 +63,12 @@ class SarGuiPlotWindowBase(QMdiSubWindow):
         else:
             self._layout.setBackground(SarGuiPlotWindowBase.BG_NORMAL)
 
+    def get_title(self) -> str:
+        raise NotImplementedError()
+
 class SarGuiImagePlotBase(SarGuiPlotWindowBase):
-    def __init__(self, title: str, aspect_lock: bool, unit_x: str = 'm', unit_y: str = 'm') -> None:
-        super().__init__(title)
+    def __init__(self, aspect_lock: bool, unit_x: str = 'm', unit_y: str = 'm') -> None:
+        super().__init__()
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
 
@@ -213,15 +216,24 @@ class SarGuiImagePlotBase(SarGuiPlotWindowBase):
 
 class SarGuiRawDataWindow(SarGuiImagePlotBase):
     def __init__(self) -> None:
-        super().__init__("Raw FMCW Data", aspect_lock=False, unit_x='m', unit_y='s')
+        super().__init__(aspect_lock=False, unit_x='m', unit_y='s')
+
+    def get_title(self) -> str:
+        return "Raw FMCW Data"
 
 class SarGuiRangeCompressionWindow(SarGuiImagePlotBase):
     def __init__(self) -> None:
-        super().__init__("Range Compression", aspect_lock=False, unit_x='m', unit_y='m')
+        super().__init__(aspect_lock=False, unit_x='m', unit_y='m')
+
+    def get_title(self) -> str:
+        return "Range Compression"
 
 class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
     def __init__(self) -> None:
-        super().__init__("Azimuth Compression", aspect_lock=True, unit_x='m', unit_y='m')
+        super().__init__(aspect_lock=True, unit_x='m', unit_y='m')
+
+    def get_title(self) -> str:
+        return "Azimuth Compression"
 
     def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
         super().set_transform(x0, y0, dx, dy)
@@ -281,11 +293,14 @@ class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
 
 class SarGuiAutofocusResultWindow(SarGuiAzimuthCompressionWindow):
     def __init__(self) -> None:
-        super().__init__("Autofocus Result", aspect_lock=True, unit_x='m', unit_y='m')
+        super().__init__()
+
+    def get_title(self) -> str:
+        return "Autofocus Result"
 
 class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
     def __init__(self, state: simstate.SarSimParameterState):
-        super().__init__("Flight path")
+        super().__init__()
 
         self._state = state
 
@@ -315,6 +330,9 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self._plots_dist.getViewBox().setXLink(self._plots_xyz.getViewBox())
         
         self.setWidget(self._layout)
+
+    def get_title(self) -> str:
+        return "Flight path"
 
     @property
     def data_exact(self) -> Optional[np.ndarray]:
