@@ -363,7 +363,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
             self._plot_y_distorted.setData(self._data_distorted[:,1])
             self._plot_z_distorted.setData(self._data_distorted[:,2])
 
-        if self._data_exact is not None and self._data_distorted is not None:
+        if self._data_exact is not None and self._data_distorted is not None and self._data_exact.shape == self._data_distorted.shape:
             dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
             # scale to multiples of wavelength
             dist = dist / simjob.SIGNAL_SPEED * self._state.fmcw_start_frequency
