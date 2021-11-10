@@ -90,6 +90,8 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_PERCENT, 'range_compression_used_bandwidth', 'rc_cut_bw', 100, category='Range Compression'),
 
     SimParameter(_BOOL, 'use_distorted_path', 'path_distort', default=False, category='Flight path'),
+
+    SimParameter(_BOOL, 'enable_autofocus', 'af_enable', default=False, category='Autofocus'),
 )
 
 

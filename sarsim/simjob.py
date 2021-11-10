@@ -127,10 +127,14 @@ def run_sim(state: simstate.SarSimParameterState,
     image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines)
 
     ## Autofocus
-    progress_callback(.75, 'Autofocus')
-    af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
-    timestamper.tic('Autofocus')
-    af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path)
+    if state.enable_autofocus:
+        progress_callback(.75, 'Autofocus')
+        af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
+        timestamper.tic('Autofocus')
+        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path)
+    else:
+        af_image = np.zeros(image.shape)
+        optimal_phases = np.zeros(len(rc_lines))
 
     timestamper.toc()
     progress_callback(1, 'Finished')
