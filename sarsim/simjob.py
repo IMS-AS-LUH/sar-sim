@@ -235,10 +235,10 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
             # return the GPU memory handle
             image = image_gpu
     else:
+        image[:] = complex(0, 0)
         for ia in range(len(flight_path)):
             flight_point = flight_path[ia]
             a = ac_wnd[ia]
-            image[ix][iy] = complex(0, 0)
             for ix in range(len(image_x)):
                 x = image_x[ix]
                 for iy in range(len(image_y)):
