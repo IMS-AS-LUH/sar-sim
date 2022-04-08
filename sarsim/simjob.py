@@ -1,7 +1,7 @@
 import cmath
 import math
 from math import pi
-from typing import Callable, NamedTuple, Tuple, Union
+from typing import Callable, NamedTuple, Tuple, Union, Optional
 
 import numpy as np
 import scipy.signal as signal
@@ -33,9 +33,9 @@ class SimResult(NamedTuple):
 
 def run_sim(state: simstate.SarSimParameterState,
             scene: simscene.SimulationScene,
-            timestamper:profiling.TimeStamper = None,
-            progress_callback: Callable[[float, str], None] = None,
-            loaded_data: sardata.SarData = None,
+            timestamper: Optional[profiling.TimeStamper] = None,
+            progress_callback: Optional[Callable[[float, str], None]] = None,
+            loaded_data: Optional[sardata.SarData] = None,
             gpu_id: int = 0) -> SimResult:
     timestamper = timestamper or profiling.TimeStamper()
     ac_use_cuda = CUDA_NUMBA_AVAILABLE
@@ -408,7 +408,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
     ac_image = np.ravel(ac_image).copy()
     if CUDA_NUMBA_AVAILABLE:
         ac_image_gpu = cuda.to_device(ac_image)
-        cost_function_out_gpu = cuda.device_array(ac_image.shape, dtype=float)
+        cost_function_out_gpu = cuda.device_array(ac_image.shape, dtype=np.float_)
 
     optimal_phases = np.zeros((rounds, len(rc_lines)))
     # AF can have multiple overall iterations
