@@ -140,7 +140,7 @@ def run_sim(state: simstate.SarSimParameterState,
         progress_callback(.75, 'Autofocus')
         af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
         timestamper.tic('Autofocus')
-        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path)
+        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path, state.af_rounds, state.af_samples, state.af_iterations)
     else:
         af_image = np.zeros(image.shape)
         optimal_phases = np.zeros(len(rc_lines))

@@ -92,6 +92,9 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_BOOL, 'use_distorted_path', 'path_distort', default=False, category='Flight path'),
 
     SimParameter(_BOOL, 'enable_autofocus', 'af_enable', default=False, category='Autofocus'),
+    SimParameter(_COUNT, 'autofocus_rounds', 'af_rounds', default=1, category='Autofocus'),
+    SimParameter(_COUNT, 'autofocus_samples', 'af_samples', default=8, category='Autofocus'),
+    SimParameter(_COUNT, 'autofocus_iterations', 'af_iterations', default=2, category='Autofocus'),
 )
 
 
