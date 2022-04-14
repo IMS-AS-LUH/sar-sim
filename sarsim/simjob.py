@@ -12,13 +12,22 @@ from . import simscene
 # Environmental Constants
 SIGNAL_SPEED = 2.99709e8
 
-CUDA_NUMBA_AVAILABLE = True
-
+# detect CUDA installation
 try:
     from numba import cuda
+    try:
+        if not cuda.is_available():
+            CUDA_NUMBA_AVAILABLE = False
+            print('Could not initialize GPU. Falling back to CPU')
+        else: # all good
+            CUDA_NUMBA_AVAILABLE = True
+            print('GPU support detected and enabled.')
+    except cuda.cudadrv.error.CudaSupportError:  # type: ignore
+        CUDA_NUMBA_AVAILABLE = False
+        print('Could not initialize CUDA support. Falling back to CPU.')
 except ModuleNotFoundError:
     CUDA_NUMBA_AVAILABLE = False
-    print('Numba (CUDA) not found. Falling back to CPU.')
+    print('CUDA Python support (Numba) not found. Falling back to CPU.')
 
 from . import simstate, profiling
 
