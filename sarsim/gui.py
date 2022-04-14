@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QApplication, QCheckBox, QMainWindow, QDockWidget, Q
 import pyqtgraph as pg
 import numpy as np
 import functools
+import os
 
 from . import simstate
 from . import siunits
@@ -69,6 +70,7 @@ class SarGuiPlotWindowBase(QMdiSubWindow):
 class SarGuiImagePlotBase(SarGuiPlotWindowBase):
     def __init__(self, aspect_lock: bool, unit_x: str = 'm', unit_y: str = 'm') -> None:
         super().__init__()
+        self._sim_image = None
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
 
@@ -82,12 +84,15 @@ class SarGuiImagePlotBase(SarGuiPlotWindowBase):
         self._unit_y = unit_y
 
     @property
-    def data(self) -> np.ndarray:
-        return self._data
+    def data(self) -> simstate.SimImage:
+        return self._sim_image
 
     @data.setter
-    def data(self, data: np.ndarray):
-        self._data = data
+    def data(self, image: simstate.SimImage):
+        self._sim_image = image
+        magimg = 20 * np.log10(np.clip(np.abs(image.data), 1e-30, None))
+        self._data = np.clip(magimg - np.max(magimg), -240, None)
+        self.set_transform(image.y0, image.x0, image.dy, image.dx)
         self._update_data()
 
     def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
@@ -618,7 +623,8 @@ class SarGuiMainFrame(QMainWindow):
             self._color_preset_menu_children[preset] = action
 
         export = bar.addMenu('&Export')
-        export.addAction('Azimuth compressed as PNG').triggered.connect(self._export_png)
+        export.addAction('Azimuth comp. as image (PNG)').triggered.connect(self._export_png)
+        export.addAction('Azimuth comp. as NumPy array').triggered.connect(self._export_npy)
 
     def set_scene(self, scene: simscene.SimulationScene):
         self._scene = scene
@@ -669,12 +675,29 @@ class SarGuiMainFrame(QMainWindow):
         suggested_name = f"export_{round(levels[1])}dB_to_{round(levels[0])}dB.png"
 
         filename, _ = QFileDialog.getSaveFileName(self, "Select image file", suggested_name, filter="*.png")
-        if filename:
-            if not filename.endswith(".png"):
-                filename = filename + ".png"
+        if not filename:
+            return
+        if not filename.endswith(".png"):
+            filename = filename + ".png"
         
         # for some reason we need to flip the image, otherwise the exported image does not look like the graph
         self._plot_window_ac._img.qimage.mirrored(horizontal=False, vertical=True).save(filename)
+
+    def _export_npy(self):
+        if self._plot_window_ac._data is None:
+            return
+
+        suggested_name = "azi_comp.npy"
+        filename, _ = QFileDialog.getSaveFileName(self, "Select numpy file", suggested_name, filter="*.npy")
+
+        if not filename:
+            return
+
+        # np.save will append to the end of the file if it alreday exists. This is usually not expected
+        # so we delete the file beforehand, if it exists
+        if os.path.exists(filename):
+            os.unlink(filename)
+        np.save(filename, self._plot_window_ac._sim_image.data)
 
     def _update_gui_values_from_state(self):
         self._params_control.update_from_state(self._state)
@@ -743,16 +766,10 @@ class SarGuiMainFrame(QMainWindow):
     def _show_results(self, result: simjob.SimResult):
         print('GUI: Updating Plots')
 
-        def _assign(win: SarGuiImagePlotBase, img: simstate.SimImage):
-            magimg = 20 * np.log10(np.clip(np.abs(img.data), 1e-30, None))
-            win.data = np.clip(magimg - np.max(magimg), -240, None)
-            #win.set_transform(img.x0, img.y0, img.dx, img.dy)
-            win.set_transform(img.y0, img.x0, img.dy, img.dx)
-
-        _assign(self._plot_window_raw, result.raw)
-        _assign(self._plot_window_rc, result.rc)
-        _assign(self._plot_window_ac, result.ac)
-        _assign(self._plot_window_af, result.af)
+        self._plot_window_raw.data = result.raw
+        self._plot_window_rc.data = result.rc
+        self._plot_window_ac.data = result.ac
+        self._plot_window_af.data = result.af
         self._plot_fpath.data_exact = result.fpath_exact
         self._plot_fpath.data_distorted = result.fpath_distorted
         for win in self._windows:
