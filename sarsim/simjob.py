@@ -395,7 +395,6 @@ if CUDA_NUMBA_AVAILABLE:
 def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Callable[[float], None], rc_lines: np.ndarray,
         ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
     """Perform the PAFO autofocus.
-    This implementation is currently CUDA-only
     :param rounds: Number of overall autofocs iterations (normally 1)
     :param samples: Number of parallel samples to use in each iteration (usually 8)
     :param iterations: Number of sampling iterations per phase (normally 2)
