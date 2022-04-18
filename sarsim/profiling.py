@@ -19,7 +19,7 @@ class TimeStamper(object):
         self.report_tic_inline = report_tic_inline
         self._last_timestamp = None
 
-    def tic(self, section: str = None):
+    def tic(self, section: str):
         self.toc()
         self._section = section
         if self.report_tic_inline and section is not None:

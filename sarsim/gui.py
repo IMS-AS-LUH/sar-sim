@@ -1,10 +1,13 @@
-import typing
+# type: ignore Unfortunatly, a lot of Qt stuff has incorrect type annotations :(
+
+import itertools
+from typing import Optional, Tuple, List
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
-    QFormLayout, QSpinBox, QDoubleSpinBox, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit, QBoxLayout
+from PyQt5.QtWidgets import QApplication, QCheckBox, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
+    QFormLayout, QSpinBox, QDoubleSpinBox, QTabWidget, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit, QBoxLayout
 import pyqtgraph as pg
 import numpy as np
 import functools
@@ -40,14 +43,34 @@ pg.graphicsItems.GradientEditorItem.Gradients['invpaperjet'] = {
         (1.00, (75, 25, 25)),
     ], 'mode': 'rgb'}
 
-
-class SarGuiPlotSubWindow(QMdiSubWindow):
-    def __init__(self, aspect_lock: bool = True, unit_x: str = 'm', unit_y: str = 'm', variant: str = '') -> None:
+class SarGuiPlotWindowBase(QMdiSubWindow):
+    def __init__(self):
         super().__init__()
-        self.setWindowTitle('Plot')
+
+        self.setWindowTitle(self.get_title())
+
+        self._layout = pg.GraphicsLayoutWidget()
+
+    def do_autorange(self):
+        pass
+
+    BG_STALE = (64, 0, 0)
+    BG_NORMAL = (0, 0, 0)
+
+    def mark_stale(self, stale: bool = True):
+        if stale:
+            self._layout.setBackground(SarGuiPlotWindowBase.BG_STALE)
+        else:
+            self._layout.setBackground(SarGuiPlotWindowBase.BG_NORMAL)
+
+    def get_title(self) -> str:
+        raise NotImplementedError()
+
+class SarGuiImagePlotBase(SarGuiPlotWindowBase):
+    def __init__(self, aspect_lock: bool, unit_x: str = 'm', unit_y: str = 'm') -> None:
+        super().__init__()
         self._data = np.array([[]])
         self._data_tr = QtGui.QTransform()
-        self._variant = variant
 
         self._create_plot_widget()
 
@@ -58,26 +81,20 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._unit_x = unit_x
         self._unit_y = unit_y
 
-        # self._set_random_data()
-
     @property
-    def data(self) -> np.array:
+    def data(self) -> np.ndarray:
         return self._data
 
     @data.setter
-    def data(self, data: np.array):
+    def data(self, data: np.ndarray):
         self._data = data
         self._update_data()
 
-    def set_transform(self, x0, y0, dx, dy):
+    def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
         tr = QtGui.QTransform()
         tr.translate(x0-dx/2, y0-dy/2).scale(dx, dy)
         self._data_tr = tr
         self._img.setTransform(self._data_tr)
-
-        # Update data cuts
-        if self._variant == 'azimuth_comp':
-            self._update_cuts()
 
     def _set_random_data(self):
         # Generate image data
@@ -88,19 +105,14 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self.set_transform(0, 0, 1, 1)
         self.data = data
 
-    def do_autorange(self):
+    def do_autorange(self) -> None:
         self._hist.setLevels(-90, 0)
         self._p1.autoRange()
-        if self._variant == 'azimuth_comp':
-            self._range_line.setValue(0)
-            self._azi_line.setValue(0)
 
     def _create_plot_widget(self):
         # Interpret image data as row-major instead of col-major
 
         isolines = False
-
-        self._layout = pg.GraphicsLayoutWidget()
 
         # A plot area (ViewBox + axes) for displaying the image
         self._p1: pg.PlotItem = self._layout.addPlot(row=1, col=1, title="")
@@ -108,29 +120,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         # Item for displaying image data
         self._img = pg.ImageItem()
         self._p1.addItem(self._img)
-
-        # Two movable lines for "cuts" trough the data
-        if self._variant == 'azimuth_comp':
-            self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
-            self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
-            self._p1.addItem(self._range_line)
-            self._p1.addItem(self._azi_line)
-            self._range_line.setZValue(10)  # make sure line is drawn above image
-            self._azi_line.setZValue(10)
-            self._range_line.sigDragged.connect(self._update_cuts)
-            self._azi_line.sigDragged.connect(self._update_cuts)
-
-            # Line plot of the cuts
-            self._range_cut_plot: pg.PlotItem = self._layout.addPlot(row=0, col=1)
-            self._azi_cut_plot: pg.PlotItem = self._layout.addPlot(row=1, col=0)
-            self._azi_cut_plot.setFixedWidth(130)
-            self._range_cut_plot.setFixedHeight(130)
-            # self._layout.ci.layout.setRowMaximumHeight(0, 130) # set width/height of cut-plots
-            # self._layout.ci.layout.setColumnMaximumWidth(0, 130)
-            self._range_cut_plot.plot()
-            self._azi_cut_plot.plot()
-            self._range_cut_plot.setLabel('left', 'Magnitude', 'dB')
-            self._azi_cut_plot.setLabel('bottom', 'Magnitude', 'dB')
 
         # Isocurve drawing
         if isolines:
@@ -151,9 +140,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._hist.setImageItem(self._img)
         self._hist.axis.setLabel('Magnitude', 'dB')
         self._layout.addItem(self._hist, row=1, col=2)
-
-        if self._variant == 'azimuth_comp':
-            self._hist.sigLevelsChanged.connect(self._update_levels)
 
         # Draggable line for setting isocurve level
         if isolines:
@@ -179,22 +165,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         # but it works for a very simple use like this.
         self._img.hoverEvent = self._image_hover_event
 
-    def _update_cuts(self):
-        if self._data is None:
-            return
-        range_curve = self._range_cut_plot.listDataItems()[0]
-        azi_curve = self._azi_cut_plot.listDataItems()[0]
-        inv_transform, _ = self._data_tr.inverted()
-        azi_pos, range_pos = inv_transform.map(self._azi_line.value(), self._range_line.value())
-        # get the real-world coordinates for the data start/end
-        rg_start, az_start = self._data_tr.map(0.5, 0.5)
-        rg_end, az_end = self._data_tr.map(self._data.shape[1]-0.5, self._data.shape[0]-0.5)
-        az_cnt, rg_cnt = self._data.shape
-        if int(range_pos) in range(self._data.shape[0]):
-            range_curve.setData(y=self._data[int(range_pos), :], x=np.linspace(rg_start, rg_end, rg_cnt))
-        if int(azi_pos) in range(self._data.shape[1]):
-            azi_curve.setData(x=self._data[:, int(azi_pos)], y=np.linspace(az_start, az_end, az_cnt)) # get real-world coordinates of data 0,0
-
     def _update_levels(self):
         if self._data is None:
             return
@@ -215,10 +185,6 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
             gfilter = self._data
             self._iso.setData(gfilter)
             self._iso2.setData(gfilter)
-        
-        # Update data cuts
-        if self._variant == 'azimuth_comp':
-            self._update_cuts()
 
         # set position and scale of image
         self._img.setTransform(self._data_tr)
@@ -245,25 +211,175 @@ class SarGuiPlotSubWindow(QMdiSubWindow):
         self._p1.setTitle(f"{siunits.format_si_unit(x, self._unit_x)}, {siunits.format_si_unit(y, self._unit_y)} : "
                           f"{val:.2f} dB")
 
-    BG_STALE = (64, 0, 0)
-    BG_NORMAL = (0, 0, 0)
-
-    def mark_stale(self, stale: bool = True):
-        if stale:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_STALE)
-        else:
-            self._layout.setBackground(SarGuiPlotSubWindow.BG_NORMAL)
-
     def set_color_preset(self, preset: str = 'jet'):
         self._hist.gradient.loadPreset(preset)  # spectrum, viridis
 
+class SarGuiRawDataWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__(aspect_lock=False, unit_x='m', unit_y='s')
+
+    def get_title(self) -> str:
+        return "Raw FMCW Data"
+
+class SarGuiRangeCompressionWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__(aspect_lock=False, unit_x='m', unit_y='m')
+
+    def get_title(self) -> str:
+        return "Range Compression"
+
+class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
+    def __init__(self) -> None:
+        super().__init__(aspect_lock=True, unit_x='m', unit_y='m')
+
+    def get_title(self) -> str:
+        return "Azimuth Compression"
+
+    def set_transform(self, x0: float, y0: float, dx: float, dy: float) -> None:
+        super().set_transform(x0, y0, dx, dy)
+        # Update data cuts
+        self._update_cuts()
+
+    def do_autorange(self) -> None:
+        super().do_autorange()
+        self._range_line.setValue(0)
+        self._azi_line.setValue(0)
+
+    def _create_plot_widget(self):
+        super()._create_plot_widget()
+        # Two movable lines for "cuts" trough the data
+        self._range_line = pg.InfiniteLine(pos=0, movable=True, angle=0)
+        self._azi_line = pg.InfiniteLine(pos=0, movable=True, angle=90)
+        self._p1.addItem(self._range_line)
+        self._p1.addItem(self._azi_line)
+        self._range_line.setZValue(10)  # make sure line is drawn above image
+        self._azi_line.setZValue(10)
+        self._range_line.sigDragged.connect(self._update_cuts)
+        self._azi_line.sigDragged.connect(self._update_cuts)
+        self._hist.sigLevelsChanged.connect(self._update_levels)
+
+        # Line plot of the cuts
+        self._range_cut_plot: pg.PlotItem = self._layout.addPlot(row=0, col=1)
+        self._azi_cut_plot: pg.PlotItem = self._layout.addPlot(row=1, col=0)
+        self._azi_cut_plot.setFixedWidth(130)
+        self._range_cut_plot.setFixedHeight(130)
+        # self._layout.ci.layout.setRowMaximumHeight(0, 130) # set width/height of cut-plots
+        # self._layout.ci.layout.setColumnMaximumWidth(0, 130)
+        self._range_cut_plot.plot()
+        self._azi_cut_plot.plot()
+        self._range_cut_plot.setLabel('left', 'Magnitude', 'dB')
+        self._azi_cut_plot.setLabel('bottom', 'Magnitude', 'dB')
+
+    def _update_cuts(self):
+        if self._data is None:
+            return
+        range_curve = self._range_cut_plot.listDataItems()[0]
+        azi_curve = self._azi_cut_plot.listDataItems()[0]
+        inv_transform, _ = self._data_tr.inverted()
+        azi_pos, range_pos = inv_transform.map(self._azi_line.value(), self._range_line.value())
+        # get the real-world coordinates for the data start/end
+        rg_start, az_start = self._data_tr.map(0.5, 0.5)
+        rg_end, az_end = self._data_tr.map(self._data.shape[1]-0.5, self._data.shape[0]-0.5)
+        az_cnt, rg_cnt = self._data.shape
+        if int(range_pos) in range(self._data.shape[0]):
+            range_curve.setData(y=self._data[int(range_pos), :], x=np.linspace(rg_start, rg_end, rg_cnt))
+        if int(azi_pos) in range(self._data.shape[1]):
+            azi_curve.setData(x=self._data[:, int(azi_pos)], y=np.linspace(az_start, az_end, az_cnt)) # get real-world coordinates of data 0,0
+
+    def _update_data(self):
+        super()._update_data()
+        # Update data cuts
+        self._update_cuts()
+
+class SarGuiAutofocusResultWindow(SarGuiAzimuthCompressionWindow):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_title(self) -> str:
+        return "Autofocus Result"
+
+class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
+    def __init__(self, state: simstate.SarSimParameterState):
+        super().__init__()
+
+        self._state = state
+
+        self._data_exact: Optional[np.ndarray] = None
+        self._data_distorted: Optional[np.ndarray] = None
+
+        # Create plot items
+        self._plots_xyz: pg.PlotItem = self._layout.addPlot(row=1, col=1)
+        self._layout.ci.layout.setRowStretchFactor(1, 2)
+        self._plots_xyz.setLabel('left', 'Position', 'm')
+        self._plots_xyz.setLabel('bottom', '# Aperture') # this is not the position, but the aperture number
+        legend = self._plots_xyz.addLegend(offset=(50,-30), colCount=6)
+        legend.setParentItem(self._plots_xyz)
+        self._plot_x_exact = self._plots_xyz.plot(name='X (exact)', pen='y')
+        self._plot_y_exact = self._plots_xyz.plot(name='Y (exact)', pen='g')
+        self._plot_z_exact = self._plots_xyz.plot(name='Z (exact)', pen='c')
+        self._plot_x_distorted = self._plots_xyz.plot(name='X (distorted)', pen=pg.mkPen('y', style=Qt.DashLine))
+        self._plot_y_distorted = self._plots_xyz.plot(name='Y (distorted)', pen=pg.mkPen('g', style=Qt.DashLine))
+        self._plot_z_distorted = self._plots_xyz.plot(name='Z (distorted)', pen=pg.mkPen('c', style=Qt.DashLine))
+
+        self._plots_dist: pg.PlotItem = self._layout.addPlot(row=2, col=1)
+        self._layout.ci.layout.setRowStretchFactor(2, 1)
+        self._plots_dist.setLabel('left', 'Distance', 'λ')
+        self._plots_dist.setLabel('bottom', '# Aperture')
+        self._plot_dist = self._plots_dist.plot(name='Distance')
+
+        self._plots_dist.getViewBox().setXLink(self._plots_xyz.getViewBox())
+        
+        self.setWidget(self._layout)
+
+    def get_title(self) -> str:
+        return "Flight path"
+
+    @property
+    def data_exact(self) -> Optional[np.ndarray]:
+        return self._data_exact
+
+    @data_exact.setter
+    def data_exact(self, data: np.ndarray):
+        self._data_exact = data
+        self._update_plots()
+
+    @property
+    def data_distorted(self) -> Optional[np.ndarray]:
+        return self._data_distorted
+
+    @data_distorted.setter
+    def data_distorted(self, data: np.ndarray):
+        self._data_distorted = data
+        self._update_plots()
+
+    def _update_plots(self):
+        if self._data_exact is not None:
+            self._plot_x_exact.setData(self._data_exact[:,0])
+            self._plot_y_exact.setData(self._data_exact[:,1])
+            self._plot_z_exact.setData(self._data_exact[:,2])
+        
+        if self._data_distorted is not None:
+            self._plot_x_distorted.setData(self._data_distorted[:,0])
+            self._plot_y_distorted.setData(self._data_distorted[:,1])
+            self._plot_z_distorted.setData(self._data_distorted[:,2])
+
+        if self._data_exact is not None and self._data_distorted is not None and self._data_exact.shape == self._data_distorted.shape:
+            dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
+            # scale to multiples of wavelength
+            dist = dist / simjob.SIGNAL_SPEED * self._state.fmcw_start_frequency
+            self._plot_dist.setData(dist)
+
+    def do_autorange(self):
+        self._plots_xyz.autoRange()
+        self._plots_dist.autoRange()
 
 class SarGuiSimWorker(QObject):
-    finished = pyqtSignal(dict)
+    finished = pyqtSignal(simjob.SimResult)
     progress = pyqtSignal(float, str)
-    sim_state: simstate.SarSimParameterState = None
-    loaded_data: sardata.SarData = None
-    sim_scene: simscene.SimulationScene = None
+    sim_state: simstate.SarSimParameterState
+    loaded_data: Optional[sardata.SarData] = None
+    sim_scene: simscene.SimulationScene
+    gpu_id: int = 0
 
     def run(self):
         ts = profiling.TimeStamper()
@@ -271,51 +387,182 @@ class SarGuiSimWorker(QObject):
         def cb(p, m):
             self.progress.emit(p, m)
 
-        images = simjob.run_sim(self.sim_state, self.sim_scene, ts, cb, self.loaded_data)
+        images = simjob.run_sim(self.sim_state, self.sim_scene, ts, cb, self.loaded_data, self.gpu_id)
         self.finished.emit(images)
 
 
+class SarGuiParameterDock():
+    def __init__(self, win: 'SarGuiMainFrame'):
+        # We pass in the window, not the state itself: The state could be exchanged by a new instance, when
+        # a capture is loaded. When the state is passed directly, it will be captured by the callbacks, so the
+        # controls would still update the old instance.
+        self.widgets = {} # Save all widget in a dict, so that we can update them from update_from_state()
+
+        self.tab_control = QTabWidget()
+        self.tab_control.setTabPosition(QTabWidget.TabPosition.West)
+
+        def get_category(x: simstate.SimParameter):
+            if x.category is not None:
+                return x.category
+            else:
+                return "Uncategorized"
+
+        params_by_catergory = itertools.groupby(sorted(win._state.get_parameters(), key=get_category), key=get_category)
+        for category, parameters in params_by_catergory:
+            form = QFormLayout()
+            form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+            widget = QWidget(self.tab_control)
+            widget.setLayout(form)
+
+            self.tab_control.addTab(widget, category)
+
+            for parameter in parameters:
+                box = None
+                if parameter.type.type is float:
+                    factor, unit = siunits.choose_si_scale(
+                        parameter.default or win._state.get_value(parameter),
+                        parameter.type.unit)
+                    box = QDoubleSpinBox()
+                    box.setDecimals(3)
+                    box.setSingleStep(1)
+                    if parameter.symbol is not None:
+                        box.setPrefix(f'{parameter.symbol} = ')
+                    if unit is not None and len(unit) > 0:
+                        box.setSuffix(f' {unit}')
+                    box.setProperty('si_factor', factor)
+                    if parameter.type.min is not None:
+                        box.setMinimum(parameter.type.min / factor)
+                    if parameter.type.max is not None:
+                        box.setMaximum(parameter.type.max / factor)
+                    box.setValue(win._state.get_value(parameter) / factor)
+                    box.valueChanged.connect(lambda v, p=parameter, f=factor: win._state.set_value(p, v*f))
+
+                elif parameter.type.type is int:
+                    box = QSpinBox()
+                    if parameter.symbol is not None:
+                        box.setPrefix(f'{parameter.symbol} = ')
+                    if parameter.type.unit is not None:
+                        box.setSuffix(f' {parameter.type.unit}')
+                    box.setProperty('si_factor', 1)
+                    if parameter.type.min is not None:
+                        box.setMinimum(parameter.type.min)
+                    if parameter.type.max is not None:
+                        box.setMaximum(parameter.type.max)
+                    box.setValue(win._state.get_value(parameter))
+                    box.valueChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
+
+                elif parameter.type.type is str or parameter.type.choices is not None:
+                    value = win._state.get_value(parameter)
+                    choices = parameter.type.choices
+                    if value is None:
+                        value = ''
+                    if choices is not None: # enum-style parameter
+                        box = QComboBox()
+                        for choice in choices.keys():
+                            box.addItem(choice)
+                        box.setCurrentText(self._get_dict_key_by_value(choices, value))
+                        box.currentTextChanged.connect(lambda v, p=parameter: win._state.set_value(p, choices[v]))
+                    else: # normal string parameter
+                        box = QLineEdit()
+                        box.setText(value)
+                        box.textChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
+                    tool_tip = []
+                    if parameter.symbol is not None:
+                        tool_tip.append(f'{parameter.symbol}')
+                    if parameter.type.unit is not None:
+                        tool_tip.append(f'[{parameter.type.unit}]')
+                    if len(tool_tip) > 0:
+                        box.setToolTip(' '.join(tool_tip))
+
+                elif parameter.type.type is bool:
+                    box = QCheckBox()
+                    box.setChecked(win._state.get_value(parameter))
+                    box.stateChanged.connect(lambda v, p=parameter: win._state.set_value(p, v == QtCore.Qt.CheckState.Checked))
+
+                else:
+                    print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
+                    continue  # others not supported for now in GUI
+
+                form.addRow(parameter.human_name(), box)
+                self.widgets[parameter.name] = box
+
+    @classmethod
+    def _get_dict_key_by_value(cls, d, v):
+        return list(d.keys())[list(d.values()).index(v)]
+
+    def get_widget(self) -> QTabWidget:
+        return self.tab_control
+
+    def update_from_state(self, state: simstate.SarSimParameterState) -> None:
+        for parameter in state.get_parameters():
+            if parameter.name not in self.widgets:
+                print(f"Note: Ignoring unknown parameter {parameter.name}")
+                continue
+            box = self.widgets[parameter.name]
+            value = state.get_value(parameter)
+            if parameter.type.type in [float, int]:
+                factor = box.property('si_factor')
+                box.setValue(value / factor)
+            elif parameter.type.type is str or parameter.type.choices is not None:
+                if isinstance(box, QComboBox):
+                    box.setCurrentText(self._get_dict_key_by_value(parameter.type.choices, value))
+                else:
+                    box.setText(value)
+            elif parameter.type.type is bool:
+                box.setChecked(value)
+            else:
+                raise NotImplementedError("Update routine missing!")
+
 class SarGuiMainFrame(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, args) -> None:
         super().__init__()
+
+        self.args = args # command line args
 
         self._state = simstate.create_state()
         self._scene = simscene.create_default_scene()
 
-        self._loaded_data = None  # sardata.SarData
+        self._loaded_data: Optional[sardata.SarData] = None
         self._use_loaded_data: bool = False
 
         self._color_preset = 'jet'
 
         self._create_menu()
-        self._param_widgets = self._create_parameter_dock()
+        self._params_control = self._create_parameter_dock()
 
         self._create_mdi()
         self._create_status_bar()
 
-        self._plot_window_raw = SarGuiPlotSubWindow(False, 'm', 's', variant='raw')
-        self._plot_window_rc = SarGuiPlotSubWindow(False, variant='range_comp')
-        self._plot_window_ac = SarGuiPlotSubWindow(variant='azimuth_comp')
+        self._plot_window_raw = SarGuiRawDataWindow()
+        self._plot_window_rc = SarGuiRangeCompressionWindow()
+        self._plot_window_ac = SarGuiAzimuthCompressionWindow()
+        self._plot_window_af = SarGuiAutofocusResultWindow()
+        self._plot_fpath = SarGuiFlightPathWindow(self._state)
 
-        self._plot_window_raw.setWindowTitle('Raw FMCW Data')
-        self._plot_window_rc.setWindowTitle('Range Compression')
-        self._plot_window_ac.setWindowTitle('Azimuth Compression')
+        # Connect the level controls of AC and AF together
+        self._plot_window_ac._hist.sigLevelsChanged.connect(lambda h: self._plot_window_af._hist.setLevels(*h.getLevels()))
+        self._plot_window_af._hist.sigLevelsChanged.connect(lambda h: self._plot_window_ac._hist.setLevels(*h.getLevels()))
 
-        # Add in order of processing, last will be double size on left if 3 MDIs
-        self.mdi.addSubWindow(self._plot_window_raw)
-        self.mdi.addSubWindow(self._plot_window_rc)
-        self.mdi.addSubWindow(self._plot_window_ac)
+        # Add in order of processing
+        self._windows: List[SarGuiPlotWindowBase] = [
+            self._plot_window_raw,
+            self._plot_window_rc,
+            self._plot_window_ac,
+            self._plot_fpath,
+            self._plot_window_af,
+        ]
+        for win in self._windows:
+            self.mdi.addSubWindow(win)
 
         # Thread for worker
-        self._worker_thread = None
-        self._worker = None
+        self._worker_thread: Optional[QThread] = None
+        self._worker: Optional[SarGuiSimWorker] = None
 
         # See if we had any sim so far (for initial auto-ranging feature etc)
         self._first_run = True
-        self._plot_window_raw.mark_stale()
-        self._plot_window_rc.mark_stale()
-        self._plot_window_ac.mark_stale()
-
+        for win in self._windows:
+            win.mark_stale()
+        
         # Default view
         self.mdi.tileSubWindows()
         self.showMaximized()
@@ -383,6 +630,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_raw.set_color_preset(self._color_preset)
         self._plot_window_rc.set_color_preset(self._color_preset)
         self._plot_window_ac.set_color_preset(self._color_preset)
+        self._plot_window_af.set_color_preset(self._color_preset)
         pass
 
     def _load_param_file(self):
@@ -429,21 +677,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_ac._img.qimage.mirrored(horizontal=False, vertical=True).save(filename)
 
     def _update_gui_values_from_state(self):
-        for parameter in self._state.get_parameters():
-            if parameter.name not in self._param_widgets:
-                continue
-            box = self._param_widgets[parameter.name]
-            value = self._state.get_value(parameter)
-            if parameter.type.type in [float, int]:
-                factor = box.property('si_factor')
-                box.setValue(value / factor)
-            elif parameter.type.type is str:
-                if isinstance(box, QComboBox):
-                    box.setCurrentText(self._state.get_value(parameter))
-                else:
-                    box.setText(self._state.get_value(parameter))
-            else:
-                raise NotImplementedError("Update routine missing!")
+        self._params_control.update_from_state(self._state)
 
     def _save_param_file(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Select parameter file", filter="*.ini")
@@ -452,8 +686,8 @@ class SarGuiMainFrame(QMainWindow):
                 filename = filename + ".ini"
             self._state.write_to_file(filename)
 
-    def on_parameter_spinbox_change(self, symbol: str, value: float):
-        print(f'{symbol} = {value}')
+    # def on_parameter_spinbox_change(self, symbol: str, value: float):
+    #     print(f'{symbol} = {value}')
 
     def _create_parameter_dock(self):
         dock = QDockWidget("Parameters", self)
@@ -461,80 +695,10 @@ class SarGuiMainFrame(QMainWindow):
 
         stack = QBoxLayout(QBoxLayout.Direction.TopToBottom)
 
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+        param_dock = SarGuiParameterDock(self)
 
-        widgets = {} # Save all widget in a dict, so that we can update them from _load_param_file()
-        # TODO: Refactor this into a class?
-
-        for parameter in self._state.get_parameters():
-            box = None
-            if parameter.type.type is float:
-                factor, unit = siunits.choose_si_scale(
-                    parameter.default or self._state.get_value(parameter),
-                    parameter.type.unit)
-                box = QDoubleSpinBox()
-                box.setDecimals(3)
-                box.setSingleStep(1)
-                if parameter.symbol is not None:
-                    box.setPrefix(f'{parameter.symbol} = ')
-                if unit is not None and len(unit) > 0:
-                    box.setSuffix(f' {unit}')
-                box.setProperty('si_factor', factor)
-                if parameter.type.min is not None:
-                    box.setMinimum(parameter.type.min / factor)
-                if parameter.type.max is not None:
-                    box.setMaximum(parameter.type.max / factor)
-                box.setValue(self._state.get_value(parameter) / factor)
-                box.valueChanged.connect(lambda v, p=parameter, f=factor: self._state.set_value(p, v*f))
-
-            elif parameter.type.type is int:
-                box = QSpinBox()
-                if parameter.symbol is not None:
-                    box.setPrefix(f'{parameter.symbol} = ')
-                if parameter.type.unit is not None:
-                    box.setSuffix(f' {parameter.type.unit}')
-                box.setProperty('si_factor', 1)
-                if parameter.type.min is not None:
-                    box.setMinimum(parameter.type.min)
-                if parameter.type.max is not None:
-                    box.setMaximum(parameter.type.max)
-                box.setValue(self._state.get_value(parameter))
-                box.valueChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-
-            elif parameter.type.type is str:
-                value = self._state.get_value(parameter)
-                if value is None:
-                    value = ''
-                if parameter.type.choices is not None:
-                    box = QComboBox()
-                    for choice in parameter.type.choices:
-                        box.addItem(choice)
-                    box.setCurrentText(value)
-                    box.currentTextChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-                else:
-                    box = QLineEdit()
-                    box.setText(value)
-                    box.textChanged.connect(lambda v, p=parameter: self._state.set_value(p, v))
-                tool_tip = []
-                if parameter.symbol is not None:
-                    tool_tip.append(f'{parameter.symbol}')
-                if parameter.type.unit is not None:
-                    tool_tip.append(f'[{parameter.type.unit}]')
-                if len(tool_tip) > 0:
-                    box.setToolTip(' '.join(tool_tip))
-
-            else:
-                print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
-                continue  # others not supported for now in GUI
-
-            form.addRow(parameter.human_name(), box)
-            widgets[parameter.name] = box
-
-        widget = QWidget(self)
-        widget.setLayout(form)
         scroll = QScrollArea(self)
-        scroll.setWidget(widget)
+        scroll.setWidget(param_dock.get_widget())
 
         stack.addWidget(scroll)
 
@@ -564,35 +728,35 @@ class SarGuiMainFrame(QMainWindow):
 
         self._parameter_dock = dock
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self.resizeDocks([dock], [305], QtCore.Qt.Orientation.Horizontal)
+        self.resizeDocks([dock], [320], QtCore.Qt.Orientation.Horizontal)
         
-
-        return widgets
+        return param_dock
 
     def _autorange_plots(self):
-        self._plot_window_raw.do_autorange()
-        self._plot_window_rc.do_autorange()
-        self._plot_window_ac.do_autorange()
+        for win in self._windows:
+            win.do_autorange()
 
     def _show_progress(self, progress: float, message: str):
         self._progress_bar.setValue(progress*1000)
         self._progress_label.setText(message)
 
-    def _show_results(self, images: dict):
+    def _show_results(self, result: simjob.SimResult):
         print('GUI: Updating Plots')
 
-        def _assign(win: SarGuiPlotSubWindow, img: simstate.SimImage):
+        def _assign(win: SarGuiImagePlotBase, img: simstate.SimImage):
             magimg = 20 * np.log10(np.clip(np.abs(img.data), 1e-30, None))
             win.data = np.clip(magimg - np.max(magimg), -240, None)
             #win.set_transform(img.x0, img.y0, img.dx, img.dy)
             win.set_transform(img.y0, img.x0, img.dy, img.dx)
 
-        _assign(self._plot_window_raw, images['raw'])
-        _assign(self._plot_window_rc, images['rc'])
-        _assign(self._plot_window_ac, images['ac'])
-        self._plot_window_raw.mark_stale(False)
-        self._plot_window_rc.mark_stale(False)
-        self._plot_window_ac.mark_stale(False)
+        _assign(self._plot_window_raw, result.raw)
+        _assign(self._plot_window_rc, result.rc)
+        _assign(self._plot_window_ac, result.ac)
+        _assign(self._plot_window_af, result.af)
+        self._plot_fpath.data_exact = result.fpath_exact
+        self._plot_fpath.data_distorted = result.fpath_distorted
+        for win in self._windows:
+            win.mark_stale(False)
 
         if self._first_run:
             self._autorange_plots()
@@ -624,15 +788,16 @@ class SarGuiMainFrame(QMainWindow):
             return
         print('GUI: Starting Simulation in Thread')
         self._create_worker()
+        assert self._worker is not None and self._worker_thread is not None
         self._worker.sim_state = self._state
         self._worker.sim_scene = self._scene
+        self._worker.gpu_id = self.args.gpu
         if self._use_loaded_data:
             self._worker.loaded_data = self._loaded_data
         else:
             self._worker.loaded_data = None
-        self._plot_window_raw.mark_stale(True)
-        self._plot_window_rc.mark_stale(True)
-        self._plot_window_ac.mark_stale(True)
+        for win in self._windows:
+            win.mark_stale(True)
         self._worker_thread.start()
 
     def _create_mdi(self):
@@ -657,7 +822,7 @@ class SarGuiMainFrame(QMainWindow):
 
 
 
-def run_gui():
+def run_gui(args):
     QApplication.setStyle('fusion')
 
     pg.setConfigOptions(imageAxisOrder='row-major')
@@ -667,7 +832,7 @@ def run_gui():
     app.setApplicationDisplayName('SAR-Sim GUI')
     app.setOrganizationName('IMS')
 
-    wnd = SarGuiMainFrame()
+    wnd = SarGuiMainFrame(args)
     wnd.show()
 
     app.exec_()

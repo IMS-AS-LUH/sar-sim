@@ -3,7 +3,7 @@ from typing import NamedTuple, Union, List, TextIO
 
 class SimpleReflector(NamedTuple):
     """
-    Simples possible reflector:
+    Simplest possible reflector:
     Has zero size, one single coordinate and only the amplitude
     """
     x: float
@@ -17,7 +17,7 @@ class SimulationScene(object):
         # These internal lists shall not be altered directly!
         self._simple_reflectors: List[SimpleReflector] = []
 
-    def __add__(self, other: Union[SimpleReflector]):
+    def __add__(self, other: Union[SimpleReflector]): # type: ignore (Union, because there could be more types later)
         if isinstance(other, SimpleReflector):
             self._simple_reflectors.append(other)
         return self

@@ -5,6 +5,8 @@ import scipy.io as sio
 import array
 import os
 from configparser import ConfigParser
+
+from sarsim.operations import SUPPORTED_WINDOWS
 from . import simstate
 
 class SarData(object):
@@ -12,7 +14,7 @@ class SarData(object):
         self.cfg: ConfigParser = ConfigParser()
         self.sim_state: simstate.SarSimParameterState = simstate.SarSimParameterState()
         self.fmcw_lines: list = []
-        self.flight_path: np.array = []
+        self.flight_path: np.ndarray = np.array([])
         self.name: str = ""
 
     @staticmethod
@@ -34,6 +36,7 @@ class SarData(object):
         # *** Fixed parameters not in cfg file ***
         sim.fmcw_adc_frequency = 1.0e6  # Implied from Sensor type
         sim.azimuth_3db_angle_deg = 30  # Guessed somewhat, TODO: Measure some day
+        sim.r0 = -0.052 # Implied from Sensor type
 
         # *** Load Compatible Parameters ***
         sim.fmcw_start_frequency = cfg['params'].getfloat('start_frequency')
@@ -48,8 +51,8 @@ class SarData(object):
         sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
 
         # Guessed somewhat, TODO: Qualify sensible settings
-        sim.azimuth_compression_window = 'Blackman'
-        sim.range_compression_window = 'Tukey'
+        sim.azimuth_compression_window = SUPPORTED_WINDOWS['Rect']
+        sim.range_compression_window = SUPPORTED_WINDOWS['Tukey']
         sim.range_compression_window_parameter = 0.25
 
         # *** Decode Flightpath ***
@@ -107,17 +110,31 @@ class SarData(object):
     def import_from_directory(cls, directory: str) -> 'SarData':
         sd = SarData()
         capture_id = os.path.basename(directory)
-        if capture_id.endswith('.sardata'):
-            capture_id = capture_id[0:-8]
+        if not capture_id.endswith('.sardata'):
+            raise Exception("Selected folder does not look like a valid *.sardata archive.")
+        capture_id = capture_id[0:-8]
         sd.name = capture_id
+
+        # try to find the .cfg and bin file. It usually has the same basename as the folder,
+        # but might have a different name if the folder was renamed. Therefore we just check
+        # if there is a single file with the correct extension.
+        cfg_files = [x for x in os.listdir(directory) if x.endswith('.cfg')]
+        bin_files = [x for x in os.listdir(directory) if x.endswith('.bin')]
+
+        if len(cfg_files) != 1:
+            raise Exception("Folder contains no/too many *.cfg files.")
+
+        if len(bin_files) != 1:
+            raise Exception("Folder contains no/too many *.bin files.")
+
         cfg = ConfigParser()
-        if len(cfg.read(os.path.join(directory, f'{capture_id}.cfg'))) != 1:
+        if len(cfg.read(os.path.join(directory, cfg_files[0]))) != 1:
             raise Exception("Cannot read cfg file in captured sardata.")
         sd.cfg = cfg
         sd._load_cfg_values()
         samples_per_rangeline = round(sd.sim_state.fmcw_ramp_duration * sd.sim_state.fmcw_adc_frequency)
         sd.fmcw_lines = cls.load_fmcw_binary(
-            os.path.join(directory, f'{capture_id}.bin'),
+            os.path.join(directory, bin_files[0]),
             sd.sim_state.azimuth_count,
             samples_per_rangeline
         )
