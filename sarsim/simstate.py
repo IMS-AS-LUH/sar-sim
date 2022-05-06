@@ -11,6 +11,17 @@ class SimParameterType(NamedTuple):
     max: Union[Any, None] = None
     choices: Optional[Dict[str, Any]] = None
 
+    def parse_string(self, val: str):
+        """Convert a string to the underlying data type, with special handling for booleans and enums."""
+        if self.choices is not None: # enum
+            return self.choices[val]
+        elif self.type == bool: # special handling for booleans, alike configparser
+            if val.lower() not in configparser.ConfigParser.BOOLEAN_STATES:
+                raise ValueError(f"Not a boolean: {val}")
+            return configparser.ConfigParser.BOOLEAN_STATES[val.lower()]
+        else: # any other type, use type as converter function
+            return self.type(val)
+
 class SimParameter(NamedTuple):
     type: SimParameterType
     name: str
@@ -146,17 +157,7 @@ class SarSimParameterState(object):
             if param.name not in cfg['params']:
                 print(f'Load Parameter Note: Using default for {param.name}: {state.get_value(param)}')
                 continue
-            if param.type.type == int:
-                val = cfg['params'].getint(param.name)
-            elif param.type.type == float:
-                val = cfg['params'].getfloat(param.name)
-            elif param.type.type == bool:
-                val = cfg['params'].getboolean(param.name)
-            elif param.type.type == str:
-                val = cfg['params'].get(param.name)
-            else:
-                raise NotImplementedError(f"Type {param.type.type} is not supported by the config file read yet")
-
+            val = param.type.parse_string(cfg['params'].get(param.name))
             state.set_value(param, val)
 
         return state

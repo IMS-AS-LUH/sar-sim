@@ -514,12 +514,12 @@ class SarGuiParameterDock():
                 raise NotImplementedError("Update routine missing!")
 
 class SarGuiMainFrame(QMainWindow):
-    def __init__(self, args) -> None:
+    def __init__(self, args, state: simstate.SarSimParameterState) -> None:
         super().__init__()
 
         self.args = args # command line args
 
-        self._state = simstate.create_state()
+        self._state = state
         self._scene = simscene.create_default_scene()
 
         self._loaded_data: Optional[sardata.SarData] = None
@@ -822,7 +822,7 @@ class SarGuiMainFrame(QMainWindow):
 
 
 
-def run_gui(args):
+def run_gui(args, state: simstate.SarSimParameterState):
     QApplication.setStyle('fusion')
 
     pg.setConfigOptions(imageAxisOrder='row-major')
@@ -832,7 +832,7 @@ def run_gui(args):
     app.setApplicationDisplayName('SAR-Sim GUI')
     app.setOrganizationName('IMS')
 
-    wnd = SarGuiMainFrame(args)
+    wnd = SarGuiMainFrame(args, state)
     wnd.show()
 
     app.exec_()
