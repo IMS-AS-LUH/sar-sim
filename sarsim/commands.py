@@ -47,17 +47,18 @@ def run_command(cmd: str, state: simstate.SarSimParameterState):
 
         state.set_value(param, param.type.parse_string(value))
     else: # action
+        action, *params = cmd.split()
         try:
-            commands[cmd]()
+            commands[action](*params)
         except KeyError:
-            print(f"Command {cmd} not found, ignoring")
+            print(f"Command {action} not found, ignoring")
 
 def script_command(func: Callable):
     # register the function
     commands[func.__name__] = func
 
 # Following are the implementations of various commands. Each must be annotated by @script_command to be callable
-# from scripting. Currently these methods may not received arguments (although that could be implemented)
+# from scripting.
 
 @script_command
 def print_date():
