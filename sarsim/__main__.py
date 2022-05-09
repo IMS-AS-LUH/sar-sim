@@ -1,5 +1,7 @@
 import argparse
 import sys, io
+
+from sarsim import simscene
 from . import commands, simstate
 
 if __name__ == '__main__':
@@ -17,8 +19,12 @@ if __name__ == '__main__':
     # Track if a valid command was executed to suppress warning if --gui was not selected.
     command_executed = False
 
-    # Create global simulation state
-    state = simstate.create_state()
+    # Create global programm state
+    state = commands.ProgramState(
+        args=args,
+        simstate=simstate.create_state(),
+        scene=simscene.create_default_scene()
+        )
 
     if args.write_stubs:
         print('Writing Stub-Files')
@@ -46,7 +52,7 @@ if __name__ == '__main__':
         print('Launching SAR-Sim GUI.')
 
         from . import gui
-        gui.run_gui(args, state)
+        gui.run_gui(state)
 
         print('SAR-Sim GUI closed.')
         exit(0)
