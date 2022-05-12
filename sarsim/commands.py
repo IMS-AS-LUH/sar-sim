@@ -30,6 +30,7 @@ times. Command files must have one command per line. Examples:
 
 --do r0=0 run_sim
 --do r0=0 --do run_sim
+--do "load_capture cap.sardata"
 --do-file script.txt
 --do r0=0 --do-file script1.txt script2.txt --do r0=1 run_sim
 """
