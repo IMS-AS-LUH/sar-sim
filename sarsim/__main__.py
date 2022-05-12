@@ -1,8 +1,8 @@
 import argparse
-import sys, io
+import sys
+import io
 
-from sarsim import simscene
-from . import commands, simstate
+from sarsim import simscene, commands, simstate
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='IMS SAR Simulator', prog='python3 -m sarsim')

@@ -1,7 +1,10 @@
 from typing import Dict, NamedTuple, Optional, Tuple, Any, Type, Union, List, Iterable
-import numpy as np
+
 import configparser
-from .operations import SUPPORTED_WINDOWS, Window
+
+import numpy as np
+
+from sarsim.operations import SUPPORTED_WINDOWS, Window
 
 # note: this should be a Generic[T] for smarter typechecking, but python does not allow for multiple inheritance on named tuples :(
 class SimParameterType(NamedTuple):

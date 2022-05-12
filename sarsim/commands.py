@@ -1,14 +1,12 @@
 # This module contains simple commands that may be called from scripts (and are used by the GUI)
 
-import argparse
-from dataclasses import dataclass
 from typing import Callable, Optional
 
+import argparse
+from dataclasses import dataclass
 from datetime import datetime
 
-from sarsim import sardata, simjob, simscene, simstate, profiling
-
-from . import simstate
+from sarsim import sardata, simjob, simscene, simstate, profiling, simstate
 
 help_text = """
 Information on scripting support.
