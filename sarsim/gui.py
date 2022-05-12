@@ -13,13 +13,7 @@ import numpy as np
 import functools
 import os
 
-from . import simstate
-from . import siunits
-from . import simjob
-from . import profiling
-from . import sardata
-from . import simscene
-
+from sarsim import commands, simstate, siunits, simjob, profiling, sardata, simscene
 
 # Patch in the "jet" colormap used in the demo etc.
 pg.graphicsItems.GradientEditorItem.Gradients['jet'] = {
@@ -397,10 +391,7 @@ class SarGuiSimWorker(QObject):
 
 
 class SarGuiParameterDock():
-    def __init__(self, win: 'SarGuiMainFrame'):
-        # We pass in the window, not the state itself: The state could be exchanged by a new instance, when
-        # a capture is loaded. When the state is passed directly, it will be captured by the callbacks, so the
-        # controls would still update the old instance.
+    def __init__(self, pstate: commands.ProgramState):
         self.widgets = {} # Save all widget in a dict, so that we can update them from update_from_state()
 
         self.tab_control = QTabWidget()
@@ -412,7 +403,7 @@ class SarGuiParameterDock():
             else:
                 return "Uncategorized"
 
-        params_by_catergory = itertools.groupby(sorted(win._state.get_parameters(), key=get_category), key=get_category)
+        params_by_catergory = itertools.groupby(sorted(pstate.simstate.get_parameters(), key=get_category), key=get_category)
         for category, parameters in params_by_catergory:
             form = QFormLayout()
             form.setRowWrapPolicy(QFormLayout.WrapAllRows)
@@ -425,7 +416,7 @@ class SarGuiParameterDock():
                 box = None
                 if parameter.type.type is float:
                     factor, unit = siunits.choose_si_scale(
-                        parameter.default or win._state.get_value(parameter),
+                        parameter.default or pstate.simstate.get_value(parameter),
                         parameter.type.unit)
                     box = QDoubleSpinBox()
                     box.setDecimals(3)
@@ -439,8 +430,8 @@ class SarGuiParameterDock():
                         box.setMinimum(parameter.type.min / factor)
                     if parameter.type.max is not None:
                         box.setMaximum(parameter.type.max / factor)
-                    box.setValue(win._state.get_value(parameter) / factor)
-                    box.valueChanged.connect(lambda v, p=parameter, f=factor: win._state.set_value(p, v*f))
+                    box.setValue(pstate.simstate.get_value(parameter) / factor)
+                    box.valueChanged.connect(lambda v, p=parameter, f=factor: pstate.simstate.set_value(p, v*f))
 
                 elif parameter.type.type is int:
                     box = QSpinBox()
@@ -453,11 +444,11 @@ class SarGuiParameterDock():
                         box.setMinimum(parameter.type.min)
                     if parameter.type.max is not None:
                         box.setMaximum(parameter.type.max)
-                    box.setValue(win._state.get_value(parameter))
-                    box.valueChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
+                    box.setValue(pstate.simstate.get_value(parameter))
+                    box.valueChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, v))
 
                 elif parameter.type.type is str or parameter.type.choices is not None:
-                    value = win._state.get_value(parameter)
+                    value = pstate.simstate.get_value(parameter)
                     choices = parameter.type.choices
                     if value is None:
                         value = ''
@@ -466,11 +457,11 @@ class SarGuiParameterDock():
                         for choice in choices.keys():
                             box.addItem(choice)
                         box.setCurrentText(self._get_dict_key_by_value(choices, value))
-                        box.currentTextChanged.connect(lambda v, p=parameter: win._state.set_value(p, choices[v]))
+                        box.currentTextChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, choices[v]))
                     else: # normal string parameter
                         box = QLineEdit()
                         box.setText(value)
-                        box.textChanged.connect(lambda v, p=parameter: win._state.set_value(p, v))
+                        box.textChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, v))
                     tool_tip = []
                     if parameter.symbol is not None:
                         tool_tip.append(f'{parameter.symbol}')
@@ -481,8 +472,8 @@ class SarGuiParameterDock():
 
                 elif parameter.type.type is bool:
                     box = QCheckBox()
-                    box.setChecked(win._state.get_value(parameter))
-                    box.stateChanged.connect(lambda v, p=parameter: win._state.set_value(p, v == QtCore.Qt.CheckState.Checked))
+                    box.setChecked(pstate.simstate.get_value(parameter))
+                    box.stateChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, v == QtCore.Qt.CheckState.Checked))
 
                 else:
                     print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
@@ -519,16 +510,10 @@ class SarGuiParameterDock():
                 raise NotImplementedError("Update routine missing!")
 
 class SarGuiMainFrame(QMainWindow):
-    def __init__(self, args) -> None:
-        super().__init__()
+    def __init__(self, pstate: commands.ProgramState) -> None:
+        super().__init__()        
 
-        self.args = args # command line args
-
-        self._state = simstate.create_state()
-        self._scene = simscene.create_default_scene()
-
-        self._loaded_data: Optional[sardata.SarData] = None
-        self._use_loaded_data: bool = False
+        self._pstate: commands.ProgramState = pstate
 
         self._color_preset = 'jet'
 
@@ -542,7 +527,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_rc = SarGuiRangeCompressionWindow()
         self._plot_window_ac = SarGuiAzimuthCompressionWindow()
         self._plot_window_af = SarGuiAutofocusResultWindow()
-        self._plot_fpath = SarGuiFlightPathWindow(self._state)
+        self._plot_fpath = SarGuiFlightPathWindow(self._pstate.simstate)
 
         # Connect the level controls of AC and AF together
         self._plot_window_ac._hist.sigLevelsChanged.connect(lambda h: self._plot_window_af._hist.setLevels(*h.getLevels()))
@@ -571,6 +556,13 @@ class SarGuiMainFrame(QMainWindow):
         # Default view
         self.mdi.tileSubWindows()
         self.showMaximized()
+
+        # Pre-load values from pstate
+        if pstate.loaded_dataset is not None:
+            self._label_loaded_dataset.setText(pstate.loaded_dataset.name)
+        self._update_color_preset()
+        self._update_plots()
+        self._update_gui_values_from_state()
 
     def _create_menu(self):
         bar = self.menuBar()
@@ -630,19 +622,22 @@ class SarGuiMainFrame(QMainWindow):
         self._scene = scene
 
     def set_color_preset(self, preset: str):
+        commands.set_color_preset(self._pstate, preset)
+        self._update_color_preset()
+
+    def _update_color_preset(self):
+        preset = self._pstate.color_preset
         for p, a in self._color_preset_menu_children.items():
             a.setChecked(p == preset)
-        self._color_preset = preset
-        self._plot_window_raw.set_color_preset(self._color_preset)
-        self._plot_window_rc.set_color_preset(self._color_preset)
-        self._plot_window_ac.set_color_preset(self._color_preset)
-        self._plot_window_af.set_color_preset(self._color_preset)
-        pass
+        self._plot_window_raw.set_color_preset(preset)
+        self._plot_window_rc.set_color_preset(preset)
+        self._plot_window_ac.set_color_preset(preset)
+        self._plot_window_af.set_color_preset(preset)
 
     def _load_param_file(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Select parameter file", filter="*.ini")
         if filename:
-            self._state = simstate.SarSimParameterState.read_from_file(filename)
+            commands.load_param_file(self._pstate, filename)
 
         self._update_gui_values_from_state()
 
@@ -651,20 +646,13 @@ class SarGuiMainFrame(QMainWindow):
                                                    options=QFileDialog.ShowDirsOnly | QFileDialog.ReadOnly)
         if dirname:
             print(dirname)
-            sd = sardata.SarData.import_from_directory(dirname)
-            self._state = sd.sim_state
-            self._use_loaded_data = True
-            self._loaded_data = sd
+            commands.load_capture(self._pstate, dirname)
             self._label_loaded_dataset.setText(sd.name)
-
-            print(f'Loaded SarData from: {dirname}')
-            print(f'Raw FMCW: {len(sd.fmcw_lines)} lines of {len(sd.fmcw_lines[0])} samples')
 
         self._update_gui_values_from_state()
 
     def _unload_demo_capture(self):
-        self._use_loaded_data = False
-        self._loaded_data = None
+        commands.unload_capture(pstate)
         self._label_loaded_dataset.setText('(none)')
 
     def _export_png(self):
@@ -700,14 +688,14 @@ class SarGuiMainFrame(QMainWindow):
         np.save(filename, self._plot_window_ac._sim_image.data)
 
     def _update_gui_values_from_state(self):
-        self._params_control.update_from_state(self._state)
+        self._params_control.update_from_state(self._pstate.simstate)
 
     def _save_param_file(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Select parameter file", filter="*.ini")
         if filename:
             if not filename.endswith(".ini"):
                 filename = filename + ".ini"
-            self._state.write_to_file(filename)
+            commands.save_param_file(self._pstate, filename)
 
     # def on_parameter_spinbox_change(self, symbol: str, value: float):
     #     print(f'{symbol} = {value}')
@@ -718,7 +706,7 @@ class SarGuiMainFrame(QMainWindow):
 
         stack = QBoxLayout(QBoxLayout.Direction.TopToBottom)
 
-        param_dock = SarGuiParameterDock(self)
+        param_dock = SarGuiParameterDock(self._pstate)
 
         scroll = QScrollArea(self)
         scroll.setWidget(param_dock.get_widget())
@@ -764,14 +752,22 @@ class SarGuiMainFrame(QMainWindow):
         self._progress_label.setText(message)
 
     def _show_results(self, result: simjob.SimResult):
+        self._pstate.sim_result = result
+        self._update_plots()
+
+    def _update_plots(self):
+        if self._pstate.sim_result is None:
+            return
+        
         print('GUI: Updating Plots')
 
-        self._plot_window_raw.data = result.raw
-        self._plot_window_rc.data = result.rc
-        self._plot_window_ac.data = result.ac
-        self._plot_window_af.data = result.af
-        self._plot_fpath.data_exact = result.fpath_exact
-        self._plot_fpath.data_distorted = result.fpath_distorted
+        self._plot_window_raw.data = self._pstate.sim_result.raw
+        self._plot_window_rc.data = self._pstate.sim_result.rc
+        self._plot_window_ac.data = self._pstate.sim_result.ac
+        self._plot_window_af.data = self._pstate.sim_result.af
+        self._plot_fpath.data_exact = self._pstate.sim_result.fpath_exact
+        self._plot_fpath.data_distorted = self._pstate.sim_result.fpath_distorted
+
         for win in self._windows:
             win.mark_stale(False)
 
@@ -806,13 +802,10 @@ class SarGuiMainFrame(QMainWindow):
         print('GUI: Starting Simulation in Thread')
         self._create_worker()
         assert self._worker is not None and self._worker_thread is not None
-        self._worker.sim_state = self._state
-        self._worker.sim_scene = self._scene
-        self._worker.gpu_id = self.args.gpu
-        if self._use_loaded_data:
-            self._worker.loaded_data = self._loaded_data
-        else:
-            self._worker.loaded_data = None
+        self._worker.sim_state = self._pstate.simstate
+        self._worker.sim_scene = self._pstate.scene
+        self._worker.gpu_id = self._pstate.args.gpu
+        self._worker.loaded_data = self._pstate.loaded_dataset
         for win in self._windows:
             win.mark_stale(True)
         self._worker_thread.start()
@@ -839,7 +832,7 @@ class SarGuiMainFrame(QMainWindow):
 
 
 
-def run_gui(args):
+def run_gui(pstate: commands.ProgramState):
     QApplication.setStyle('fusion')
 
     pg.setConfigOptions(imageAxisOrder='row-major')
@@ -849,7 +842,7 @@ def run_gui(args):
     app.setApplicationDisplayName('SAR-Sim GUI')
     app.setOrganizationName('IMS')
 
-    wnd = SarGuiMainFrame(args)
+    wnd = SarGuiMainFrame(pstate)
     wnd.show()
 
     app.exec_()

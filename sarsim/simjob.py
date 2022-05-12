@@ -12,13 +12,22 @@ from . import simscene
 # Environmental Constants
 SIGNAL_SPEED = 2.99709e8
 
-CUDA_NUMBA_AVAILABLE = True
-
+# detect CUDA installation
 try:
     from numba import cuda
+    try:
+        if not cuda.is_available():
+            CUDA_NUMBA_AVAILABLE = False
+            print('Could not initialize GPU. Falling back to CPU')
+        else: # all good
+            CUDA_NUMBA_AVAILABLE = True
+            print('GPU support detected and enabled.')
+    except cuda.cudadrv.error.CudaSupportError:  # type: ignore
+        CUDA_NUMBA_AVAILABLE = False
+        print('Could not initialize CUDA support. Falling back to CPU.')
 except ModuleNotFoundError:
     CUDA_NUMBA_AVAILABLE = False
-    print('Numba (CUDA) not found. Falling back to CPU.')
+    print('CUDA Python support (Numba) not found. Falling back to CPU.')
 
 from . import simstate, profiling
 
@@ -131,7 +140,7 @@ def run_sim(state: simstate.SarSimParameterState,
         progress_callback(.75, 'Autofocus')
         af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
         timestamper.tic('Autofocus')
-        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path)
+        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path, state.autofocus_rounds, state.autofocus_samples, state.autofocus_iterations)
     else:
         af_image = np.zeros(image.shape)
         optimal_phases = np.zeros(len(rc_lines))
@@ -395,7 +404,6 @@ if CUDA_NUMBA_AVAILABLE:
 def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Callable[[float], None], rc_lines: np.ndarray,
         ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
     """Perform the PAFO autofocus.
-    This implementation is currently CUDA-only
     :param rounds: Number of overall autofocs iterations (normally 1)
     :param samples: Number of parallel samples to use in each iteration (usually 8)
     :param iterations: Number of sampling iterations per phase (normally 2)
