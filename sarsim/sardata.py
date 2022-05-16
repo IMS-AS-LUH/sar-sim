@@ -83,8 +83,8 @@ class SarData(object):
         sim.image_stop_x = image_region[2]
         sim.image_stop_y = image_region[3]
 
-        sim.image_count_x = cfg['params'].getint('gbp_image_pixels_range', fallback=1024)
-        sim.image_count_y = round(sim.image_count_x *
+        sim.image_count_y = cfg['params'].getint('gbp_image_pixels_ range', fallback=1024)
+        sim.image_count_x = round(sim.image_count_y *
                                   (image_region[2] - image_region[0]) /
                                   (image_region[3] - image_region[1])
                                   )
