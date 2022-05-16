@@ -64,7 +64,7 @@ SAR_SIM_PARAMETERS = (
 
     SimParameter(_COUNT, 'azimuth_count', 'n_az', 201, category='Acquisition'),
     SimParameter(_POS_HALF_ANGLE, 'azimuth_3db_angle_deg', 'ant_a', 7.5, category='Acquisition'),
-    SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5, category='Acquisition'),
+    SimParameter(_POS_HALF_ANGLE, 'azimuth_compression_beam_limit', 'ac_bl', 7.5, category='Azimuth Compression'),
 
     SimParameter(_WINDOW, 'azimuth_compression_window', 'ac_wnd', SUPPORTED_WINDOWS['Rect'], category='Azimuth Compression'),
     SimParameter(_WINDOW_PARAM, 'azimuth_compression_window_parameter', 'ac_wnd_param', 0, category='Azimuth Compression'),

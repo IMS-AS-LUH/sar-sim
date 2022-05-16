@@ -92,6 +92,7 @@ def load_capture(pstate: ProgramState, path: str):
 @script_command
 def unload_capture(pstate: ProgramState):
     pstate.loaded_dataset = None
+    pstate.simstate = simstate.create_state()
 
 @script_command
 def set_color_preset(pstate: ProgramState, color_preset: str):
