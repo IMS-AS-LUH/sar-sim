@@ -79,7 +79,10 @@ Currently, the following fields are known:
 |           | gbp_image_z       | Recommended height of image plane above ground, in meters. Assume `0` if missing.
 |           | gbp_beam_limit    | Recommended beamlimit for processing, usually the opening angle of the antenna, in degrees.
 |           | sensor_range_delay| Offset to the first range samples, in meters. Often known as `r0`.
+|           | signal_speed      | Speed of light in the medium, in m/s.
 |           | *                 | The IMS SAR Demo script will write all parameters (also the ones for real-time processing) to the params section.
+|           | center_frequency  | For range-compressed data: Center frequency of the transmitter, in Hz.
+|           | bandwidth         | For range-compressed data: Bandwidth of the transmitter, in Hz.
 | fpath     | x                 | Comma delimited list of antenna coordinates, length should match `azimuth_count`. In meters, in the same coordinate system as `gbp_image_region`. This is the cross-range direction.
 |           | y                 | See above. This is the range-direction.
 |           | z                 | See above. This is the height.

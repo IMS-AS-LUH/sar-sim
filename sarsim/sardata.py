@@ -1,3 +1,5 @@
+from typing import Optional
+
 import math
 
 import numpy as np
@@ -13,9 +15,11 @@ class SarData(object):
     def __init__(self):
         self.cfg: ConfigParser = ConfigParser()
         self.sim_state: simstate.SarSimParameterState = simstate.SarSimParameterState()
-        self.fmcw_lines: list = []
+        self.fmcw_lines: Optional[list] = None
+        self.rg_comp_data: Optional[np.ndarray] = None
         self.flight_path: np.ndarray = np.array([])
         self.name: str = ""
+        self.has_range_compressed_data: bool = False
 
     @staticmethod
     def load_fmcw_binary(bin_file: str, lines: int, line_length: int) -> list:
@@ -23,32 +27,55 @@ class SarData(object):
         with open(bin_file, 'rb') as f:
             for i in range(lines):
                 a = array.array('i')
+                assert a.itemsize == 4, "sizeof(int) != 4"
                 a.fromfile(f, line_length)
                 data.append(np.array(a, dtype=np.single)/2.0**15)
         return data
 
+    @staticmethod
+    def load_range_comp_binary(bin_file: str, lines: int) -> np.ndarray:
+        with open(bin_file, 'rb') as f:
+            data = np.fromfile(f, dtype=np.complex64)
+            return data.reshape((lines, -1))
+
     def _load_cfg_values(self):
         cfg = self.cfg
-        if str(cfg['general'].get('radartype')) not in ['80', '144']:
-            raise Exception("Cannot import - only 80 and 144 GHz Sensor types implemented")
+
+        is_rg_comp = cfg['general'].getboolean('data_is_range_compressed', fallback=False)
+        self.has_range_compressed_data = is_rg_comp
+
+        if not is_rg_comp:
+            if str(cfg['general'].get('radartype')) not in ['80', '144']:
+                raise Exception("Cannot import - only 80 and 144 GHz Sensor types implemented")
 
         sim = self.sim_state
-        # *** Fixed parameters not in cfg file ***
-        sim.fmcw_adc_frequency = 1.0e6  # Implied from Sensor type
+        # *** Paramters with defaults for the demonstrator ***
+        sim.fmcw_adc_frequency = cfg['params'].getfloat('adc_frequency', fallback=1.0e6)  # Default implied from Sensor type
+        # note that azimuth_3db_angle_deg is used for simulation, azimuth_compression_beam_limit is used for processing
         sim.azimuth_3db_angle_deg = 30  # Guessed somewhat, TODO: Measure some day
-        sim.r0 = -0.052 # Implied from Sensor type
+        sim.r0 = cfg['params'].getfloat('sensor_range_delay', -0.052) # Default implied from Sensor type
+        sim.signal_speed = cfg['params'].getfloat('signal_speed', fallback=simstate.suggested_c_speeds['Air'])
 
         # *** Load Compatible Parameters ***
-        sim.fmcw_start_frequency = cfg['params'].getfloat('start_frequency')
-        sim.fmcw_stop_frequency = cfg['params'].getfloat('stop_frequency')
-        sim.fmcw_ramp_duration = cfg['params'].getfloat('ramp_duration')
+        if not is_rg_comp:
+            sim.fmcw_start_frequency = cfg['params'].getfloat('start_frequency')
+            sim.fmcw_stop_frequency = cfg['params'].getfloat('stop_frequency')
+            sim.fmcw_ramp_duration = cfg['params'].getfloat('ramp_duration')
+        else:
+            # we cheat a bit here and use the center freq. as start freq. and fc+B as stop freq.
+            # this does not make so much sense, because we are dealing with already range-compressed
+            # data, and therefore cannot tell anymore if it was aquired using a FMCW radar. Anyway,
+            # this gives the correct results due to how the backprojection is implemented
+            sim.fmcw_start_frequency = cfg['params'].getfloat('center_frequency')
+            sim.fmcw_stop_frequency = cfg['params'].getfloat('center_frequency') + cfg['params'].getfloat('bandwidth')
+            sim.fmcw_ramp_duration = 0
 
         sim.azimuth_start_position = cfg['params'].getfloat('azimuth_start_position')
         sim.azimuth_stop_position = cfg['params'].getfloat('azimuth_end_position')
         # Note: azimuth_speed_limit not used YET - TODO: Add when we introduce velocity
         sim.azimuth_count = cfg['params'].getint('azimuth_count')
 
-        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
+        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)        
 
         # Guessed somewhat, TODO: Qualify sensible settings
         sim.azimuth_compression_window = SUPPORTED_WINDOWS['Rect']
@@ -56,7 +83,10 @@ class SarData(object):
         sim.range_compression_window_parameter = 0.25
 
         # *** Decode Flightpath ***
-        img_offset_z = cfg['params'].getfloat('gbp_image_z', fallback=-0.05)
+        if not is_rg_comp:
+            img_offset_z = cfg['params'].getfloat('gbp_image_z', fallback=-0.05)
+        else:
+            img_offset_z = cfg['params'].getfloat('gbp_image_z', fallback=0) # use 0 as fallback for z height for rg compressed, this makes more sense
         transposed_flight_path = np.array([
             [float(x) for x in str(cfg['fpath']['x']).split(',')],
             [float(x) for x in str(cfg['fpath']['y']).split(',')],
@@ -97,14 +127,13 @@ class SarData(object):
         icy = (sim.image_start_y + sim.image_stop_y) / 2
         # icz = 0 by definition
 
-        sim.flight_height = faz
+        sim.flight_height = faz # type: ignore # floating[Any] vs. float...
         sim.flight_distance_to_scene_center = math.sqrt((fax-icx)**2 + (fay-icy)**2)
-        sim.range_compression_fft_min_oversample = math.floor(
-            cfg['params'].getint('range_compression_nfft', fallback=32768) /
-            (sim.fmcw_ramp_duration * sim.fmcw_adc_frequency)
-        )
-
-        pass
+        if not is_rg_comp:
+            sim.range_compression_fft_min_oversample = math.floor(
+                cfg['params'].getint('range_compression_nfft', fallback=32768) /
+                (sim.fmcw_ramp_duration * sim.fmcw_adc_frequency)
+            )
 
     @classmethod
     def import_from_directory(cls, directory: str) -> 'SarData':
@@ -115,27 +144,54 @@ class SarData(object):
         capture_id = capture_id[0:-8]
         sd.name = capture_id
 
-        # try to find the .cfg and bin file. It usually has the same basename as the folder,
-        # but might have a different name if the folder was renamed. Therefore we just check
-        # if there is a single file with the correct extension.
-        cfg_files = [x for x in os.listdir(directory) if x.endswith('.cfg')]
-        bin_files = [x for x in os.listdir(directory) if x.endswith('.bin')]
+        # try to find the .cfg file. Per (new) spec it should be called "params.cfg"
+        # but it used to have the same basename as the folder, or an unrelated name if
+        # the folder was renamed. We try the first to options and, as a last resort,
+        # check if there is a single .cfg file and use that.
+        cfg_file_name = None
+        for n in ['params.cfg', capture_id + '.cfg']:
+            if os.path.exists(os.path.join(directory, n)):
+                cfg_file_name = n
+                break
+        if cfg_file_name is None:
+            cfg_candidates = [x for x in os.listdir(directory) if x.endswith('.cfg')]
+            if len(cfg_candidates) != 1:
+                raise Exception("Folder contains no/too many *.cfg files.")
+            cfg_file_name = cfg_candidates[0]
 
-        if len(cfg_files) != 1:
-            raise Exception("Folder contains no/too many *.cfg files.")
-
-        if len(bin_files) != 1:
-            raise Exception("Folder contains no/too many *.bin files.")
-
+        
         cfg = ConfigParser()
-        if len(cfg.read(os.path.join(directory, cfg_files[0]))) != 1:
+        if len(cfg.read(os.path.join(directory, cfg_file_name))) != 1:
             raise Exception("Cannot read cfg file in captured sardata.")
         sd.cfg = cfg
         sd._load_cfg_values()
-        samples_per_rangeline = round(sd.sim_state.fmcw_ramp_duration * sd.sim_state.fmcw_adc_frequency)
-        sd.fmcw_lines = cls.load_fmcw_binary(
-            os.path.join(directory, bin_files[0]),
-            sd.sim_state.azimuth_count,
-            samples_per_rangeline
-        )
+
+        # now do the same to find the .bin file. The official name is "fmcw.bin",
+        # except with data_is_range_compressed is set, then it should be called
+        # "range_comp.bin" (and we don't try the other in that case!)
+        if sd.has_range_compressed_data:
+            bin_spec_name = 'range_comp.bin'
+        else:
+            bin_spec_name = 'fmcw.bin'
+
+        bin_file_name = None
+        for n in [bin_spec_name, capture_id + '.bin']:
+            if os.path.exists(os.path.join(directory, n)):
+                bin_file_name = n
+                break
+        if bin_file_name is None:
+            bin_candidates = [x for x in os.listdir(directory) if x.endswith('.bin') and x != 'fmcw.bin' and x != 'range_comp.bin']
+            if len(bin_candidates) != 1:
+                raise Exception("Folder contains no/too many *.bin files.")
+            bin_file_name = bin_candidates[0]
+
+        if not sd.has_range_compressed_data:
+            samples_per_rangeline = round(sd.sim_state.fmcw_ramp_duration * sd.sim_state.fmcw_adc_frequency)
+            sd.fmcw_lines = cls.load_fmcw_binary(
+                os.path.join(directory, bin_file_name),
+                sd.sim_state.azimuth_count,
+                samples_per_rangeline
+            )
+        else:
+            sd.rg_comp_data = cls.load_range_comp_binary(os.path.join(directory, bin_file_name), sd.sim_state.azimuth_count)
         return sd
