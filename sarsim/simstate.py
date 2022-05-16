@@ -7,9 +7,10 @@ from .operations import SUPPORTED_WINDOWS, Window
 class SimParameterType(NamedTuple):
     type: Type
     unit: str = ''
-    min: Union[Any, None] = None
-    max: Union[Any, None] = None
-    choices: Optional[Dict[str, Any]] = None
+    min: Optional[Any] = None
+    max: Optional[Any] = None
+    choices: Optional[Dict[str, Any]] = None # fixed list of possible values
+    suggestions: Optional[Dict[str, Any]] = None # optional suggestions
 
     def parse_string(self, val: str):
         """Convert a string to the underlying data type, with special handling for booleans and enums."""

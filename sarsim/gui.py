@@ -435,7 +435,21 @@ class SarGuiParameterDock():
 
             for parameter in parameters:
                 box = None
-                if parameter.type.type is float:
+                if parameter.type.suggestions is not None:
+                    box = QComboBox()
+                    box.setEditable(True)
+                    for sug, sugval in parameter.type.suggestions.items():
+                        box.addItem(sug)
+                    box.currentIndexChanged.connect(lambda i, p=parameter, box=box: box.setEditText(str(p.type.suggestions[box.itemText(i)])))
+                    def storeValue(v: str, p=parameter):
+                        print(v)
+                        try:
+                            pstate.simstate.set_value(p, parameter.type.type(v))
+                        except ValueError:
+                            pass
+                    box.currentTextChanged.connect(storeValue)
+
+                elif parameter.type.type is float:
                     factor, unit = siunits.choose_si_scale(
                         parameter.default or pstate.simstate.get_value(parameter),
                         parameter.type.unit)
@@ -517,7 +531,9 @@ class SarGuiParameterDock():
                 continue
             box = self.widgets[parameter.name]
             value = state.get_value(parameter)
-            if parameter.type.type in [float, int]:
+            if parameter.type.suggestions is not None:
+                box.setCurrentText(str(value))
+            elif parameter.type.type in [float, int]:
                 factor = box.property('si_factor')
                 box.setValue(value / factor)
             elif parameter.type.type is str or parameter.type.choices is not None:
