@@ -9,9 +9,6 @@ from . import operations
 from . import sardata
 from . import simscene
 
-# Environmental Constants
-SIGNAL_SPEED = 2.99709e8
-
 # detect CUDA installation
 try:
     from numba import cuda
@@ -117,7 +114,7 @@ def run_sim(state: simstate.SarSimParameterState,
 
         timestamper.tic('FMCW Simulation')
 
-        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, SIGNAL_SPEED, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+            fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, state.signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
 
         timestamper.toc()
 

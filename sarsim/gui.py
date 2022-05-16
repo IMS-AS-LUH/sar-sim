@@ -381,7 +381,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         if self._data_exact is not None and self._data_distorted is not None and self._data_exact.shape == self._data_distorted.shape:
             dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
             # scale to multiples of wavelength
-            dist = dist / simjob.SIGNAL_SPEED * self._state.fmcw_start_frequency
+            dist = dist / self._state.signal_speed * self._state.fmcw_start_frequency
             self._plot_dist.setData(dist)
 
         if self._optimal_phases is not None:
@@ -442,7 +442,6 @@ class SarGuiParameterDock():
                         box.addItem(sug)
                     box.currentIndexChanged.connect(lambda i, p=parameter, box=box: box.setEditText(str(p.type.suggestions[box.itemText(i)])))
                     def storeValue(v: str, p=parameter):
-                        print(v)
                         try:
                             pstate.simstate.set_value(p, parameter.type.type(v))
                         except ValueError:

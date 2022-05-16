@@ -38,6 +38,13 @@ class SimParameter(NamedTuple):
         return self.name.replace('_', ' ').title()
 
 
+suggested_c_speeds = {
+    'Vakuum': 299792458.0,
+    'Air': 2.99709e8,
+    'Water': 2.249e8,
+    'Estimate': 3e8,
+}
+
 # We define reusable parameter types ...
 _CARRIER_FREQUENCY = SimParameterType(float, unit='Hz', min=1e3, max=300e9)
 _ADC_FREQUENCY = SimParameterType(float, unit='Hz', min=1, max=300e6)
@@ -51,7 +58,7 @@ _WINDOW_PARAM = SimParameterType(float)
 _PERCENT = SimParameterType(float, unit='%', min=0, max=100)
 _FACTOR = SimParameterType(float, min=0)
 _BOOL = SimParameterType(bool)
-
+_C_SPEED = SimParameterType(float, min=0, unit='m/s', suggestions=suggested_c_speeds)
 
 # ... to make a list of all changeable parameters here.
 SAR_SIM_PARAMETERS = (
@@ -72,6 +79,8 @@ SAR_SIM_PARAMETERS = (
 
     SimParameter(_METERS, 'flight_height', 'az_z0', 1.0, category='Acquisition'),
     SimParameter(_METERS, 'flight_distance_to_scene_center', 'r_sc', 4.5, category='Acquisition'),
+
+    SimParameter(_C_SPEED, 'signal_speed', 'c', suggested_c_speeds['Air'], category='General'),
 
     SimParameter(_FACTOR, 'flight_wiggle_global_scale', 'wiggle_scale', 0, category='Flight path'),
     SimParameter(_METERS, 'flight_wiggle_amplitude_azimuth', 'wiggle_az_ampl', 0.05, category='Flight path'),
