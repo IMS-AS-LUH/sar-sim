@@ -1,13 +1,13 @@
 import math
-
-import numpy as np
-import scipy.io as sio
 import array
 import os
 from configparser import ConfigParser
 
+import numpy as np
+import scipy.io as sio
+
 from sarsim.operations import SUPPORTED_WINDOWS
-from . import simstate
+from sarsim import simstate
 
 class SarData(object):
     def __init__(self):

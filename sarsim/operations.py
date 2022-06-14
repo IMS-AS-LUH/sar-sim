@@ -1,8 +1,9 @@
 # This module is intended to separate repeated configurable (mathematical) operations used in the simulation
 
+from typing import NamedTuple, Callable, Optional
+
 import cmath
 import math
-from typing import NamedTuple, Callable, Optional
 
 import numpy as np
 import scipy.signal as signal

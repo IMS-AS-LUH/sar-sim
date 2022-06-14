@@ -1,14 +1,12 @@
 # This module contains simple commands that may be called from scripts (and are used by the GUI)
 
-import argparse
-from dataclasses import dataclass
 from typing import Callable, Optional
 
+import argparse
+from dataclasses import dataclass
 from datetime import datetime
 
-from sarsim import sardata, simjob, simscene, simstate, profiling
-
-from . import simstate
+from sarsim import sardata, simjob, simscene, simstate, profiling, simstate
 
 help_text = """
 Information on scripting support.
@@ -32,6 +30,7 @@ times. Command files must have one command per line. Examples:
 
 --do r0=0 run_sim
 --do r0=0 --do run_sim
+--do "load_capture cap.sardata"
 --do-file script.txt
 --do r0=0 --do-file script1.txt script2.txt --do r0=1 run_sim
 """
