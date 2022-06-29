@@ -401,6 +401,15 @@ class SarGuiSimWorker(QObject):
     gpu_id: int = 0
 
     def run(self):
+        # this code run on a different thread, we need to notify the debugger of this,
+        # otherwise breakpoints won't be hit. This fails when not running under a debugger,
+        # but that is fine
+        try:
+            import debugpy
+            debugpy.debug_this_thread()
+        except ModuleNotFoundError:
+            pass
+
         ts = profiling.TimeStamper()
 
         def cb(p, m):
