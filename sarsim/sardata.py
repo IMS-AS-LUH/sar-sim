@@ -45,8 +45,12 @@ class SarData(object):
         self.has_range_compressed_data = is_rg_comp
 
         if not is_rg_comp:
-            if str(cfg['general'].get('radartype')) not in ['80', '144']:
-                raise Exception("Cannot import - only 80 and 144 GHz Sensor types implemented")
+            # Known Sensor types:
+            # - "80": new, small ("RUBv2") 80 GHz sensor from the RUB
+            # - "114": new, small ("RUBv2") 114 GHz sensor from the RUB
+            # - "RUB_Bike_80": unknown sensor used to capture the "bike" scene from the RUB (same as our old 80 GHz?)
+            if str(cfg['general'].get('radartype')) not in ['80', '144', 'RUB_Bike_80']:
+                raise Exception("Cannot import - sensor type not implemented")
 
         sim = self.sim_state
         # *** Paramters with defaults for the demonstrator ***
