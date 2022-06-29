@@ -81,6 +81,7 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_METERS, 'flight_distance_to_scene_center', 'r_sc', 4.5, category='Acquisition'),
 
     SimParameter(_C_SPEED, 'signal_speed', 'c', suggested_c_speeds['Air'], category='General'),
+    SimParameter(_BOOL, 'inverted_phase_correction', 'invert_phase_corr', False, category='General', info="Only for compatibility, do not use."),
 
     SimParameter(_FACTOR, 'flight_wiggle_global_scale', 'wiggle_scale', 0, category='Flight path'),
     SimParameter(_METERS, 'flight_wiggle_amplitude_azimuth', 'wiggle_az_ampl', 0.05, category='Flight path'),

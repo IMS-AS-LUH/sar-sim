@@ -517,6 +517,7 @@ class SarGuiParameterDock():
                     box = QCheckBox()
                     box.setChecked(pstate.simstate.get_value(parameter))
                     box.stateChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, v == QtCore.Qt.CheckState.Checked))
+                    box.setToolTip(parameter.info)
 
                 else:
                     print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')

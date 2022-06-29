@@ -59,6 +59,7 @@ class SarData(object):
         sim.azimuth_3db_angle_deg = 30  # Guessed somewhat, TODO: Measure some day
         sim.r0 = cfg['params'].getfloat('sensor_range_delay', -0.052) # Default implied from Sensor type
         sim.signal_speed = cfg['params'].getfloat('signal_speed', fallback=simstate.suggested_c_speeds['Air'])
+        sim.inverted_phase_correction = cfg['params'].getboolean('inverted_phase_correction', fallback=False)
 
         # *** Load Compatible Parameters ***
         if not is_rg_comp:

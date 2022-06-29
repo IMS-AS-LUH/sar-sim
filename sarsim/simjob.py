@@ -223,6 +223,11 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
         PC2 = 0
         fif = state.signal_speed / (2 * state.fmcw_adc_frequency) * n_rg
 
+    # compatibility hack for old cospe data that was range compressed in the wrong way:
+    if state.inverted_phase_correction:
+        PC1 = -PC1
+        PC2 = -PC2
+
     rmax = r0 + fif
     r_vector = np.linspace(r0, rmax, n_rg)
 
