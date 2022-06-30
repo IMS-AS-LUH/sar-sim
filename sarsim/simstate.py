@@ -26,6 +26,17 @@ class SimParameterType(NamedTuple):
         else: # any other type, use type as converter function
             return self.type(val)
 
+    def stringify(self, val: Any):
+        """Convert a value from of this type to a (parsable) string representation."""
+        if self.choices is not None: # enum-style type
+            for k, v in self.choices.items():
+                if v == val:
+                    return k
+            else:
+                raise ValueError(f"Value is not a valid choise for this type.")
+        else:
+            return str(val)
+
 class SimParameter(NamedTuple):
     type: SimParameterType
     name: str
@@ -155,7 +166,7 @@ class SarSimParameterState(object):
         cfg['params'] = {}
 
         for param in self.get_parameters():
-            cfg['params'][param.name] = str(self.get_value(param)) # everything must be a string
+            cfg['params'][param.name] = param.type.stringify(self.get_value(param)) # everything must be a string
 
         with open(filename, 'w') as f:
             cfg.write(f)
