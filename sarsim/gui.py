@@ -1,17 +1,18 @@
 # type: ignore Unfortunatly, a lot of Qt stuff has incorrect type annotations :(
 
-import itertools
 from typing import Optional, Tuple, List
+
+import numpy as np
+import functools
+import os
+import itertools
+import pyqtgraph as pg
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.Qt import Qt, QPixmap, QIcon
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QPoint
 from PyQt5.QtWidgets import QApplication, QCheckBox, QMainWindow, QDockWidget, QLabel, QMdiArea, QMdiSubWindow, QProgressBar, \
     QFormLayout, QSpinBox, QDoubleSpinBox, QTabWidget, QWidget, QScrollArea, QPushButton, QFileDialog, QComboBox, QLineEdit, QBoxLayout
-import pyqtgraph as pg
-import numpy as np
-import functools
-import os
 
 from sarsim import commands, simstate, siunits, simjob, profiling, sardata, simscene
 

@@ -1,13 +1,13 @@
+from typing import Callable, NamedTuple, Tuple, Union, Optional
+
 import cmath
 import math
 from math import pi
-from typing import Callable, NamedTuple, Tuple, Union, Optional
 
 import numpy as np
 import scipy.signal as signal
-from . import operations
-from . import sardata
-from . import simscene
+
+from sarsim import operations, sardata, simscene
 
 # detect CUDA installation
 try:
@@ -468,7 +468,10 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                     sample_points = last_optimum + indices * sample_spacing
 
                 # Get the "subtract, then add rotated" factors
-                candidate_factors = np.expm1(1j * sample_points)
+                if round == 1: #in the first round we have e^\chi - 1
+                    candidate_factors = np.expm1(1j * sample_points)
+                else: # in the subsequent rounds we need to consider the previous correction
+                    candidate_factors = np.exp(1j * sample_points) - np.exp(1j * optimal_phases[round-1, az_index])
                 # Build Image and apply sharpnes metric (with summing)
                 if CUDA_NUMBA_AVAILABLE:
                     blocksize = (16,)
@@ -502,7 +505,10 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                 optimal_phase = last_optimum
 
             # Apply:
-            correction_factor = np.expm1(1j*optimal_phase)
+            if round == 1: #in the first round we have e^\chi - 1
+                correction_factor = np.expm1(1j * optimal_phase)
+            else: # in the subsequent rounds we need to consider the previous correction
+                correction_factor = np.exp(1j * optimal_phase) - np.exp(1j * optimal_phases[round-1, az_index])
             if CUDA_NUMBA_AVAILABLE:
                 blocksize = (16,)
                 gridsize = (math.ceil(len(ac_image) / blocksize[0]),)
