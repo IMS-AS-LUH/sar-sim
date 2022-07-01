@@ -666,7 +666,7 @@ class SarGuiMainFrame(QMainWindow):
         export.addAction('Azimuth comp. as NumPy array').triggered.connect(self._export_npy)
 
     def set_scene(self, scene: simscene.SimulationScene):
-        self._scene = scene
+        self._pstate.scene = scene
 
     def set_color_preset(self, preset: str):
         commands.set_color_preset(self._pstate, preset)
