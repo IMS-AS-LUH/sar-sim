@@ -1,7 +1,5 @@
 # SAR Simulator
 
-![Screenshot](/doc/screenshot_1.png?raw=true)
-
 The SAR Simulator is a graphical tool for FMCW radar simulation and interactive exploration of parameters.
 It can simulate FMCW radar signals based on an algorithmic scene description.
 The resulting signal is then range-compressed and and image is reconstructed using backprojection (azimuth compression).
@@ -11,6 +9,8 @@ Optionally existing signals (before or after range compression) can be loaded an
 When available, GPU acceleration (using [Numba](https://numba.pydata.org/)/CUDA) is used.
 
 This tool was created by the Architectures and Systems Group of the Institute of Microelectronic Systems ([IMS/AS](https://www.ims.uni-hannover.de/de/institut/architekturen-und-systeme/)) at the [Leibniz University](https://www.uni-hannover.de) in Germany.
+
+![Screenshot](/doc/screenshot_1.png?raw=true)
 
 ## Getting Started
 
@@ -45,6 +45,12 @@ The SAR Simulator was tested on Ubuntu 20.04 LTS but should work on most Linux D
 
 ## Citation
 
-If you use the SAR Simulator in scientific work, please cite our paper:
+If you use the SAR Simulator in scientific work, please cite our upcoming paper (**accepted for Publication - not published yet**).
 
-    Interactive Synthetic Aperture Radar Simulator Generating and Visualizing Realistic FMCW Data. / Fahnemann, Christian; Rother, Niklas; Blume, Holger. 2022 IEEE Radar Conference (RadarConf22). IEEE, 2022.
+> Title: "Interactive Synthetic Aperture Radar Simulator Generating and Visualizing Realistic FMCW Data"
+> 
+> Authors: Christian Fahnemann, Niklas Rother, Holger Blume
+> 
+> Conference: The IET Radar 2022 (https://radar2022.theiet.org/)
+
+The correct precise citation will be updated as soon as possible.
