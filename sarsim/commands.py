@@ -86,11 +86,17 @@ def load_capture(pstate: ProgramState, path: str):
     pstate.loaded_dataset = sd
 
     print(f'Loaded SarData from: {path}')
-    print(f'Raw FMCW: {len(sd.fmcw_lines)} lines of {len(sd.fmcw_lines[0])} samples')
+    if not sd.has_range_compressed_data:
+        assert sd.fmcw_lines is not None
+        print(f'Raw FMCW: {len(sd.fmcw_lines)} lines of {len(sd.fmcw_lines[0])} samples')
+    else:
+        assert sd.rg_comp_data is not None
+        print(f'Range compressed: {len(sd.rg_comp_data)} lines of {len(sd.rg_comp_data[0])} complex samples')
 
 @script_command
 def unload_capture(pstate: ProgramState):
     pstate.loaded_dataset = None
+    pstate.simstate = simstate.create_state()
 
 @script_command
 def set_color_preset(pstate: ProgramState, color_preset: str):

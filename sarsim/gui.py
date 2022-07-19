@@ -241,9 +241,12 @@ class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
         self._update_cuts()
 
     def do_autorange(self) -> None:
+        # set the lines to the center of the image
+        rg_center = self._sim_image.x0 + self._sim_image.data.shape[0] / 2 * self._sim_image.dx
+        az_center = self._sim_image.y0 + self._sim_image.data.shape[1] / 2 * self._sim_image.dy
+        self._range_line.setValue(rg_center)
+        self._azi_line.setValue(az_center)
         super().do_autorange()
-        self._range_line.setValue(0)
-        self._azi_line.setValue(0)
 
     def _create_plot_widget(self):
         super()._create_plot_widget()
@@ -254,8 +257,8 @@ class SarGuiAzimuthCompressionWindow(SarGuiImagePlotBase):
         self._p1.addItem(self._azi_line)
         self._range_line.setZValue(10)  # make sure line is drawn above image
         self._azi_line.setZValue(10)
-        self._range_line.sigDragged.connect(self._update_cuts)
-        self._azi_line.sigDragged.connect(self._update_cuts)
+        self._range_line.sigPositionChanged.connect(self._update_cuts)
+        self._azi_line.sigPositionChanged.connect(self._update_cuts)
         self._hist.sigLevelsChanged.connect(self._update_levels)
 
         # Line plot of the cuts
@@ -306,6 +309,7 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
 
         self._data_exact: Optional[np.ndarray] = None
         self._data_distorted: Optional[np.ndarray] = None
+        self._optimal_phases: Optional[np.ndarray] = None
 
         # Create plot items
         self._plots_xyz: pg.PlotItem = self._layout.addPlot(row=1, col=1)
@@ -320,12 +324,15 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self._plot_x_distorted = self._plots_xyz.plot(name='X (distorted)', pen=pg.mkPen('y', style=Qt.DashLine))
         self._plot_y_distorted = self._plots_xyz.plot(name='Y (distorted)', pen=pg.mkPen('g', style=Qt.DashLine))
         self._plot_z_distorted = self._plots_xyz.plot(name='Z (distorted)', pen=pg.mkPen('c', style=Qt.DashLine))
-
         self._plots_dist: pg.PlotItem = self._layout.addPlot(row=2, col=1)
         self._layout.ci.layout.setRowStretchFactor(2, 1)
+        legend2 = self._plots_dist.addLegend(offset=(50,-30), colCount=2)
+        legend2.setParentItem(self._plots_dist)
         self._plots_dist.setLabel('left', 'Distance', 'λ')
         self._plots_dist.setLabel('bottom', '# Aperture')
-        self._plot_dist = self._plots_dist.plot(name='Distance')
+
+        self._plot_dist = self._plots_dist.plot(name='Distance', pen='w')
+        self._plot_dist_af = self._plots_dist.plot(name='Autofocus Estimate', pen='b')
 
         self._plots_dist.getViewBox().setXLink(self._plots_xyz.getViewBox())
         
@@ -352,6 +359,15 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         self._data_distorted = data
         self._update_plots()
 
+    @property
+    def optimal_phases(self) -> Optional[np.ndarray]:
+        return self._optimal_phases
+
+    @optimal_phases.setter
+    def optimal_phases(self, data: np.ndarray):
+        self._optimal_phases = data
+        self._update_plots()
+
     def _update_plots(self):
         if self._data_exact is not None:
             self._plot_x_exact.setData(self._data_exact[:,0])
@@ -366,8 +382,12 @@ class SarGuiFlightPathWindow(SarGuiPlotWindowBase):
         if self._data_exact is not None and self._data_distorted is not None and self._data_exact.shape == self._data_distorted.shape:
             dist = np.linalg.norm(self._data_exact - self.data_distorted, axis=1)
             # scale to multiples of wavelength
-            dist = dist / simjob.SIGNAL_SPEED * self._state.fmcw_start_frequency
+            dist = dist / self._state.signal_speed * self._state.fmcw_start_frequency
             self._plot_dist.setData(dist)
+
+        if self._optimal_phases is not None:
+            # scale to multiples of wavelength
+            self._plot_dist_af.setData(self._optimal_phases / (2*np.pi))
 
     def do_autorange(self):
         self._plots_xyz.autoRange()
@@ -382,6 +402,15 @@ class SarGuiSimWorker(QObject):
     gpu_id: int = 0
 
     def run(self):
+        # this code run on a different thread, we need to notify the debugger of this,
+        # otherwise breakpoints won't be hit. This fails when not running under a debugger,
+        # but that is fine
+        try:
+            import debugpy
+            debugpy.debug_this_thread()
+        except ModuleNotFoundError:
+            pass
+
         ts = profiling.TimeStamper()
 
         def cb(p, m):
@@ -397,6 +426,7 @@ class SarGuiParameterDock():
 
         self.tab_control = QTabWidget()
         self.tab_control.setTabPosition(QTabWidget.TabPosition.West)
+        self.tab_control.setUsesScrollButtons(False)
 
         def get_category(x: simstate.SimParameter):
             if x.category is not None:
@@ -415,7 +445,20 @@ class SarGuiParameterDock():
 
             for parameter in parameters:
                 box = None
-                if parameter.type.type is float:
+                if parameter.type.suggestions is not None:
+                    box = QComboBox()
+                    box.setEditable(True)
+                    for sug, sugval in parameter.type.suggestions.items():
+                        box.addItem(sug)
+                    box.currentIndexChanged.connect(lambda i, p=parameter, box=box: box.setEditText(str(p.type.suggestions[box.itemText(i)])))
+                    def storeValue(v: str, p=parameter):
+                        try:
+                            pstate.simstate.set_value(p, parameter.type.type(v))
+                        except ValueError:
+                            pass
+                    box.currentTextChanged.connect(storeValue)
+
+                elif parameter.type.type is float:
                     factor, unit = siunits.choose_si_scale(
                         parameter.default or pstate.simstate.get_value(parameter),
                         parameter.type.unit)
@@ -475,6 +518,7 @@ class SarGuiParameterDock():
                     box = QCheckBox()
                     box.setChecked(pstate.simstate.get_value(parameter))
                     box.stateChanged.connect(lambda v, p=parameter: pstate.simstate.set_value(p, v == QtCore.Qt.CheckState.Checked))
+                    box.setToolTip(parameter.info)
 
                 else:
                     print(f'WARNING: Unsupported type in GUI for state parameter "{parameter.name}"!')
@@ -497,7 +541,9 @@ class SarGuiParameterDock():
                 continue
             box = self.widgets[parameter.name]
             value = state.get_value(parameter)
-            if parameter.type.type in [float, int]:
+            if parameter.type.suggestions is not None:
+                box.setCurrentText(str(value))
+            elif parameter.type.type in [float, int]:
                 factor = box.property('si_factor')
                 box.setValue(value / factor)
             elif parameter.type.type is str or parameter.type.choices is not None:
@@ -620,7 +666,7 @@ class SarGuiMainFrame(QMainWindow):
         export.addAction('Azimuth comp. as NumPy array').triggered.connect(self._export_npy)
 
     def set_scene(self, scene: simscene.SimulationScene):
-        self._scene = scene
+        self._pstate.scene = scene
 
     def set_color_preset(self, preset: str):
         commands.set_color_preset(self._pstate, preset)
@@ -648,12 +694,12 @@ class SarGuiMainFrame(QMainWindow):
         if dirname:
             print(dirname)
             commands.load_capture(self._pstate, dirname)
-            self._label_loaded_dataset.setText(sd.name)
+            self._label_loaded_dataset.setText(self._pstate.loaded_dataset.name)
 
         self._update_gui_values_from_state()
 
     def _unload_demo_capture(self):
-        commands.unload_capture(pstate)
+        commands.unload_capture(self._pstate)
         self._label_loaded_dataset.setText('(none)')
 
     def _export_png(self):
@@ -768,6 +814,7 @@ class SarGuiMainFrame(QMainWindow):
         self._plot_window_af.data = self._pstate.sim_result.af
         self._plot_fpath.data_exact = self._pstate.sim_result.fpath_exact
         self._plot_fpath.data_distorted = self._pstate.sim_result.fpath_distorted
+        self._plot_fpath.optimal_phases = self._pstate.sim_result.optimal_phases[-1,:] # display results from last AF round
 
         for win in self._windows:
             win.mark_stale(False)

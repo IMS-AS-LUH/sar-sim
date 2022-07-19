@@ -9,9 +9,6 @@ import scipy.signal as signal
 
 from sarsim import operations, sardata, simscene
 
-# Environmental Constants
-SIGNAL_SPEED = 2.99709e8
-
 # detect CUDA installation
 try:
     from numba import cuda
@@ -94,56 +91,65 @@ def run_sim(state: simstate.SarSimParameterState,
     flight_path = distorted_fligh_path if state.use_distorted_path else exact_flight_path
 
     # FMCW Simulation
-    fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)
-    fmcw_up = True if state.fmcw_stop_frequency > state.fmcw_start_frequency else False
-    fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
-    fmcw_samples = math.ceil(state.fmcw_ramp_duration * state.fmcw_adc_frequency)
-    fmcw_t = np.array([float(i) / state.fmcw_adc_frequency for i in range(fmcw_samples)])
-
-    timestamper.toc()
-    fmcw_lines = None
-    if use_loaded_data:
-        assert loaded_data is not None
-        progress_callback(.05, 'Using loaded FMCW Data')
-        fmcw_lines = loaded_data.fmcw_lines
-    else:
-        progress_callback(.05, 'FMCW Simulation')
-
-        print(f'FMCW: {state.fmcw_start_frequency * 1e-9:.1f} GHz to {state.fmcw_stop_frequency * 1e-9:.1f} GHz '
-              f'yields {fmcw_bw * 1e-9:.1f} GHz Bandwidth of {"up" if fmcw_up else "down"}-Ramp.')
-
-        print(f'FMCW: {state.fmcw_ramp_duration * 1e3:.1f} ms Ramp-Time at {state.fmcw_adc_frequency * 1e-3:.1f} kHz '
-              f'yields {fmcw_samples:d} samples.')
-
-        timestamper.tic('FMCW Simulation')
-
-        fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, SIGNAL_SPEED, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+    use_fmcw = not use_loaded_data or not loaded_data.has_range_compressed_data
+    if use_fmcw:
+        fmcw_bw = abs(state.fmcw_stop_frequency - state.fmcw_start_frequency)
+        fmcw_up = True if state.fmcw_stop_frequency > state.fmcw_start_frequency else False
+        fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
+        fmcw_samples = math.ceil(state.fmcw_ramp_duration * state.fmcw_adc_frequency)
+        fmcw_t = np.array([float(i) / state.fmcw_adc_frequency for i in range(fmcw_samples)])
 
         timestamper.toc()
+        if use_loaded_data:
+            assert loaded_data is not None
+            progress_callback(.05, 'Using loaded FMCW Data')
+            fmcw_lines = loaded_data.fmcw_lines
+        else:
+            progress_callback(.05, 'FMCW Simulation')
+
+            print(f'FMCW: {state.fmcw_start_frequency * 1e-9:.1f} GHz to {state.fmcw_stop_frequency * 1e-9:.1f} GHz '
+                f'yields {fmcw_bw * 1e-9:.1f} GHz Bandwidth of {"up" if fmcw_up else "down"}-Ramp.')
+
+            print(f'FMCW: {state.fmcw_ramp_duration * 1e3:.1f} ms Ramp-Time at {state.fmcw_adc_frequency * 1e-3:.1f} kHz '
+                f'yields {fmcw_samples:d} samples.')
+
+            timestamper.tic('FMCW Simulation')
+
+            fmcw_lines = _fmcw_sim(flight_path, fmcw_samples, scene, state.signal_speed, state.fmcw_start_frequency, fmcw_slope, fmcw_t, state.azimuth_3db_angle_deg)
+
+            timestamper.toc()
+    else:
+        fmcw_lines = [np.array([0])]
 
     ## Range Compression
-    progress_callback(.25, 'Range Compression')
-    timestamper.tic('Range Compression')
-    # wnd = signal.hann(M=len(fmcw_lines[0]), sym=False)
-    # wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
+    if use_fmcw:
+        assert fmcw_lines is not None
+        progress_callback(.25, 'Range Compression')
+        timestamper.tic('Range Compression')
+        # wnd = signal.hann(M=len(fmcw_lines[0]), sym=False)
+        # wnd = signal.windows.tukey(M=len(fmcw_lines[0]), sym=False, alpha=0.25)
 
-    rc_lines = _range_compression(state, fmcw_lines)
-    timestamper.toc()
+        rc_lines = _range_compression(state, fmcw_lines)
+        timestamper.toc()
+    else:
+        assert use_loaded_data
+        assert loaded_data.rg_comp_data is not None
+        rc_lines = loaded_data.rg_comp_data
 
     ## Azimuth Compression
     progress_callback(.5, 'Azimuth Compression')
     timestamper.tic('Azimuth Compression')
-    image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines)
+    image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines, use_fmcw=use_fmcw)
 
     ## Autofocus
     if state.enable_autofocus:
         progress_callback(.75, 'Autofocus')
         af_progress_cb = lambda x: progress_callback(x / 4 + 0.75, 'Autofocus')
         timestamper.tic('Autofocus')
-        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path, state.autofocus_rounds, state.autofocus_samples, state.autofocus_iterations)
+        af_image, optimal_phases = _autofocus_pafo(state, af_progress_cb, rc_lines, image, flight_path, state.autofocus_rounds, state.autofocus_samples, state.autofocus_iterations, use_fmcw=use_fmcw)
     else:
         af_image = np.zeros(image.shape)
-        optimal_phases = np.zeros(len(rc_lines))
+        optimal_phases = np.zeros((1, len(rc_lines)))
 
     timestamper.toc()
     progress_callback(1, 'Finished')
@@ -193,7 +199,7 @@ if CUDA_NUMBA_AVAILABLE:
         image[ix][iy] = temp
 
 def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray,
-        single_pulse_mode: bool = False) -> Union[np.ndarray, cuda.cudadrv.devicearray.DeviceNDArray]: # type: ignore
+        single_pulse_mode: bool = False, use_fmcw: bool = True) -> Union[np.ndarray, cuda.cudadrv.devicearray.DeviceNDArray]: # type: ignore
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
@@ -204,17 +210,29 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
 
     image = np.empty((state.image_count_x, state.image_count_y), dtype=complex)
 
-    fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
-    PC1 = -4 * math.pi * state.fmcw_start_frequency / SIGNAL_SPEED
-    PC2 = 4 * math.pi * fmcw_slope / (SIGNAL_SPEED ** 2)
-
+    n_rg = len(rc_lines[0])
     r0 = state.r0
-    fif = (state.fmcw_adc_frequency / 2) / (2 * fmcw_slope) * SIGNAL_SPEED
+
+    PC1 = -4 * math.pi * state.fmcw_start_frequency / state.signal_speed
+    if use_fmcw:
+        fmcw_slope = (state.fmcw_stop_frequency - state.fmcw_start_frequency) / state.fmcw_ramp_duration
+        PC2 = 4 * math.pi * fmcw_slope / (state.signal_speed ** 2)
+        fif = (state.fmcw_adc_frequency / 2) / (2 * fmcw_slope) * state.signal_speed
+    else:
+        # we need the ramp duration for the second-order correction, which is unknown for non-FMCW data
+        PC2 = 0
+        fif = state.signal_speed / (2 * state.fmcw_adc_frequency) * n_rg
+
+    # compatibility hack for old cospe data that was range compressed in the wrong way:
+    if state.inverted_phase_correction:
+        PC1 = -PC1
+        PC2 = -PC2
+
     rmax = r0 + fif
-    r_vector = np.linspace(r0, rmax, len(rc_lines[0]))
+    r_vector = np.linspace(r0, rmax, n_rg)
 
     r_scale = r_vector[1] - r_vector[0]
-    r_idx_max_sub1 = len(rc_lines[0]) - 2
+    r_idx_max_sub1 = n_rg - 2
 
     beamlimit = state.azimuth_compression_beam_limit / 180 * math.pi
 
@@ -402,7 +420,7 @@ if CUDA_NUMBA_AVAILABLE:
         ac_image[ix] = ac_image[ix] + single_pulse[ix] * correction_factor
 
 def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Callable[[float], None], rc_lines: np.ndarray,
-        ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2) -> Tuple[np.ndarray, np.ndarray]:
+        ac_image: np.ndarray, flight_path: np.ndarray, rounds: int = 1, samples: int = 8, iterations = 2, use_fmcw = True) -> Tuple[np.ndarray, np.ndarray]:
     """Perform the PAFO autofocus.
     :param rounds: Number of overall autofocs iterations (normally 1)
     :param samples: Number of parallel samples to use in each iteration (usually 8)
@@ -424,7 +442,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
         # Back-Project individual apertures and then find correct focus phase
         for az_index in range(len(rc_lines)):
             # Generate single pulse image
-            _, _, single_pulse, _ = _azimuth_compression(state, CUDA_NUMBA_AVAILABLE, flight_path[[az_index]], rc_lines[[az_index]], single_pulse_mode=True)
+            _, _, single_pulse, _ = _azimuth_compression(state, CUDA_NUMBA_AVAILABLE, flight_path[[az_index]], rc_lines[[az_index]], single_pulse_mode=True, use_fmcw=use_fmcw)
             # note: in CUDA mode, singe_pulse is now a device array ("single_pulse_gpu")!
             single_pulse = single_pulse.ravel() # make linear
 
@@ -478,7 +496,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                 min_index = samples - 1
             
             interpol_indices = [min_index-1, min_index, min_index+1]
-            interpol_values = metric_sums[interpol_indices]
+            interpol_values = metric_sums[interpol_indices] # type: ignore
             
             # Parabolic interpolation
             if max(interpol_values) - min(interpol_values) > 1e-4:
