@@ -543,9 +543,11 @@ class SarGuiParameterDock():
             value = state.get_value(parameter)
             if parameter.type.suggestions is not None:
                 box.setCurrentText(str(value))
-            elif parameter.type.type in [float, int]:
+            elif parameter.type.type is float:
                 factor = box.property('si_factor')
                 box.setValue(value / factor)
+            elif parameter.type.type is int:
+                box.setValue(value)
             elif parameter.type.type is str or parameter.type.choices is not None:
                 if isinstance(box, QComboBox):
                     box.setCurrentText(self._get_dict_key_by_value(parameter.type.choices, value))
@@ -599,7 +601,11 @@ class SarGuiMainFrame(QMainWindow):
         self._first_run = True
         for win in self._windows:
             win.mark_stale()
-        
+
+        # By default, autofocus and flight path are off
+        self._plot_fpath.showMinimized()
+        self._plot_window_af.showMinimized()
+
         # Default view
         self.mdi.tileSubWindows()
         self.showMaximized()
@@ -795,7 +801,7 @@ class SarGuiMainFrame(QMainWindow):
             win.do_autorange()
 
     def _show_progress(self, progress: float, message: str):
-        self._progress_bar.setValue(progress*1000)
+        self._progress_bar.setValue(int(progress*1000))
         self._progress_label.setText(message)
 
     def _show_results(self, result: simjob.SimResult):
