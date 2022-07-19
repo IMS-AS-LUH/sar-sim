@@ -138,8 +138,10 @@ def run_sim(state: simstate.SarSimParameterState,
 
     ## Azimuth Compression
     progress_callback(.5, 'Azimuth Compression')
+    progress_divider = 4 if state.enable_autofocus else 2
+    ac_progress_cb = lambda x: progress_callback(x / progress_divider + 0.5, 'Azimuth Compression')
     timestamper.tic('Azimuth Compression')
-    image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines, use_fmcw=use_fmcw)
+    image_x, image_y, image, r_vector = _azimuth_compression(state, ac_use_cuda, flight_path, rc_lines, use_fmcw=use_fmcw, progress_callback= ac_progress_cb)
 
     ## Autofocus
     if state.enable_autofocus:
@@ -199,7 +201,8 @@ if CUDA_NUMBA_AVAILABLE:
         image[ix][iy] = temp
 
 def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool, flight_path: np.ndarray, rc_lines: np.ndarray,
-        single_pulse_mode: bool = False, use_fmcw: bool = True) -> Union[np.ndarray, cuda.cudadrv.devicearray.DeviceNDArray]: # type: ignore
+        single_pulse_mode: bool = False, use_fmcw: bool = True, progress_callback: Callable[[float], None] = None
+        ) -> Union[np.ndarray, cuda.cudadrv.devicearray.DeviceNDArray]: # type: ignore
     image_x = np.linspace(state.image_start_x, state.image_stop_x, state.image_count_x)
     image_y = np.linspace(state.image_start_y, state.image_stop_y, state.image_count_y)
 
@@ -286,6 +289,8 @@ def _azimuth_compression(state: simstate.SarSimParameterState, ac_use_cuda: bool
                         sample_int = int(sample_int)
                         sample = rc_lines[ia][sample_int] * (1 - sample_frac) + rc_lines[ia][sample_int + 1] * sample_frac
                     image[ix][iy] = image[ix][iy] + sample * cmath.exp(complex(0, pc)) * a
+            if progress_callback:
+                progress_callback(float(ia) / len(flight_path))
     
     return image_x, image_y, image, r_vector
 
