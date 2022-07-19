@@ -80,7 +80,7 @@ class SarData(object):
         # Note: azimuth_speed_limit not used YET - TODO: Add when we introduce velocity
         sim.azimuth_count = cfg['params'].getint('azimuth_count')
 
-        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)        
+        sim.azimuth_compression_beam_limit = cfg['params'].getfloat('gbp_beam_limit', fallback=30)
 
         # Guessed somewhat, TODO: Qualify sensible settings
         sim.azimuth_compression_window = SUPPORTED_WINDOWS['Rect']
@@ -118,7 +118,7 @@ class SarData(object):
         sim.image_stop_x = image_region[2]
         sim.image_stop_y = image_region[3]
 
-        sim.image_count_y = cfg['params'].getint('gbp_image_pixels_ range', fallback=1024)
+        sim.image_count_y = cfg['params'].getint('gbp_image_pixels_range', fallback=1024)
         sim.image_count_x = round(sim.image_count_y *
                                   (image_region[2] - image_region[0]) /
                                   (image_region[3] - image_region[1])
