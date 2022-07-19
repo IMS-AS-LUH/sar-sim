@@ -105,7 +105,7 @@ SAR_SIM_PARAMETERS = (
     SimParameter(_SPATIAL_FREQUENCY, 'flight_wiggle_frequency_range', 'wiggle_rg_freq', 4, category='Flight path'),
     SimParameter(_SPATIAL_FREQUENCY, 'flight_wiggle_frequency_height', 'wiggle_z_freq', 5, category='Flight path'),
 
-    SimParameter(_SPATIAL_FREQUENCY, 'distortion_sample_freqency', 'distortion_freq', 7, category='Flight path'),
+    SimParameter(_SPATIAL_FREQUENCY, 'distortion_sample_frequency', 'distortion_freq', 7, category='Flight path'),
     SimParameter(_FACTOR, 'distortion_random_factor', 'distortion_factor', 10e-4, category='Flight path'),
 
     SimParameter(_METERS, 'image_start_x', 'img_x0', -1, category='Azimuth Compression'),
