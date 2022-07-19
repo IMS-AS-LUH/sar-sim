@@ -601,7 +601,11 @@ class SarGuiMainFrame(QMainWindow):
         self._first_run = True
         for win in self._windows:
             win.mark_stale()
-        
+
+        # By default, autofocus and flight path are off
+        self._plot_fpath.showMinimized()
+        self._plot_window_af.showMinimized()
+
         # Default view
         self.mdi.tileSubWindows()
         self.showMaximized()
