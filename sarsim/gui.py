@@ -668,8 +668,9 @@ class SarGuiMainFrame(QMainWindow):
             self._color_preset_menu_children[preset] = action
 
         export = bar.addMenu('&Export')
-        export.addAction('Azimuth comp. as image (PNG)').triggered.connect(self._export_png)
-        export.addAction('Azimuth comp. as NumPy array').triggered.connect(self._export_npy)
+        export.addAction('Range comp. as NumPy array').triggered.connect(self._export_rc_npy)
+        export.addAction('Azimuth comp. as image (PNG)').triggered.connect(self._export_ac_png)
+        export.addAction('Azimuth comp. as NumPy array').triggered.connect(self._export_ac_npy)
 
     def set_scene(self, scene: simscene.SimulationScene):
         self._pstate.scene = scene
@@ -708,7 +709,26 @@ class SarGuiMainFrame(QMainWindow):
         commands.unload_capture(self._pstate)
         self._label_loaded_dataset.setText('(none)')
 
-    def _export_png(self):
+    def _export_to_numpy(self, filename: str, data: np.ndarray):
+        # np.save will append to the end of the file if it alreday exists. This is usually not expected
+        # so we delete the file beforehand, if it exists
+        if os.path.exists(filename):
+            os.unlink(filename)
+        np.save(filename, data)
+
+    def _export_rc_npy(self):
+        if self._plot_window_rc._data is None:
+            return
+
+        suggested_name = "range_comp.npy"
+        filename, _ = QFileDialog.getSaveFileName(self, "Select numpy file", suggested_name, filter="*.npy")
+
+        if not filename:
+            return
+
+        self._export_to_numpy(filename, self._plot_window_rc._sim_image.data)
+
+    def _export_ac_png(self):
         if self._plot_window_ac._data is None:
             return
 
@@ -724,7 +744,7 @@ class SarGuiMainFrame(QMainWindow):
         # for some reason we need to flip the image, otherwise the exported image does not look like the graph
         self._plot_window_ac._img.qimage.mirrored(horizontal=False, vertical=True).save(filename)
 
-    def _export_npy(self):
+    def _export_ac_npy(self):
         if self._plot_window_ac._data is None:
             return
 
@@ -734,11 +754,7 @@ class SarGuiMainFrame(QMainWindow):
         if not filename:
             return
 
-        # np.save will append to the end of the file if it alreday exists. This is usually not expected
-        # so we delete the file beforehand, if it exists
-        if os.path.exists(filename):
-            os.unlink(filename)
-        np.save(filename, self._plot_window_ac._sim_image.data)
+        self._export_to_numpy(filename, self._plot_window_ac._sim_image.data)
 
     def _update_gui_values_from_state(self):
         self._params_control.update_from_state(self._pstate.simstate)
