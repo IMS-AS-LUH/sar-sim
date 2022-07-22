@@ -376,7 +376,7 @@ def _fmcw_sim(flight_path, fmcw_samples, scene: simscene.SimulationScene, signal
 
 def _distort_path(flight_path: np.ndarray, state: simstate.SarSimParameterState) -> np.ndarray:
     """Return a down-sampled version of the flight path, as it might have been received by a GPS receiver"""
-    num_positions = int(state.distortion_sample_freqency * (state.azimuth_stop_position -state.azimuth_start_position))
+    num_positions = int(state.distortion_sample_frequency * (state.azimuth_stop_position -state.azimuth_start_position))
     random_factor = state.distortion_random_factor
 
     indices = np.linspace(0, flight_path.shape[0]-1, num_positions, dtype=np.integer)
