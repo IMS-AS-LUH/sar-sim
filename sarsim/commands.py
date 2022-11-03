@@ -18,8 +18,8 @@ name of the action "print_date".
 Assignments can be used to change parameters in the current simulator state. There must
 be no space before or after the equals sign.
 
-Actions can be used to call certain functions of the simulator. It is currently not possible
-to pass parameters to actions.
+Actions can be used to call certain functions of the simulator. Actions may multiple parameters,
+separated by spaces.
 
 Note that the simulator will normally exit, after all commands have been processed. To open a GUI
 with the current state after all commands have been processed use --gui in the arguments.
@@ -49,6 +49,9 @@ commands = dict()
 
 def run_command(cmd: str, pstate: ProgramState):
     """Run the specified command, possibly affecting the state."""
+
+    if cmd.startswith('#'): # comment
+        return
 
     if '=' in cmd: # assignment
         name, value = cmd.split('=', 1)

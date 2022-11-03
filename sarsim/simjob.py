@@ -489,6 +489,10 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
 
                 else:
                     metric_sums = -np.sum(np.abs(ac_image + single_pulse * candidate_factors[:, np.newaxis]) ** 4, axis=1)
+                    # if az_index == 1:
+                        # print(single_pulse[0], single_pulse[1], single_pulse[2], single_pulse[3])
+                        # print(iteration, candidate_factors)
+                        # print(iteration, -metric_sums)
                 assert metric_sums.shape[0] == len(candidate_factors)
                 # Minimum point
                 min_index = np.argmin(metric_sums)
