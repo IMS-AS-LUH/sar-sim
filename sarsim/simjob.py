@@ -473,7 +473,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                     sample_points = last_optimum + indices * sample_spacing
 
                 # Get the "subtract, then add rotated" factors
-                if round == 1: #in the first round we have e^\chi - 1
+                if round == 0: #in the first round we have e^\chi - 1
                     candidate_factors = np.expm1(1j * sample_points)
                 else: # in the subsequent rounds we need to consider the previous correction
                     candidate_factors = np.exp(1j * sample_points) - np.exp(1j * optimal_phases[round-1, az_index])
