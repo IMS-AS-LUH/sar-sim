@@ -514,7 +514,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                 optimal_phase = last_optimum
 
             # Apply:
-            if round == 1: #in the first round we have e^\chi - 1
+            if round == 0: #in the first round we have e^\chi - 1
                 correction_factor = np.expm1(1j * optimal_phase)
             else: # in the subsequent rounds we need to consider the previous correction
                 correction_factor = np.exp(1j * optimal_phase) - np.exp(1j * optimal_phases[round-1, az_index])
