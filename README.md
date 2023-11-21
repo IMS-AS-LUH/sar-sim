@@ -45,12 +45,16 @@ The SAR Simulator was tested on Ubuntu 20.04 LTS but should work on most Linux D
 
 ## Citation
 
-If you use the SAR Simulator in scientific work, please cite our upcoming paper (**accepted for Publication - not published yet**).
+If you use the SAR Simulator in scientific work, please cite our paper "[Interactive synthetic aperture radar simulator generating and visualizing realistic FMCW data](https://ieeexplore.ieee.org/document/10106365)".
 
-> Title: "Interactive Synthetic Aperture Radar Simulator Generating and Visualizing Realistic FMCW Data"
-> 
-> Authors: Christian Fahnemann, Niklas Rother, Holger Blume
-> 
-> Conference: The IET Radar 2022 (https://radar2022.theiet.org/)
-
-The correct precise citation will be updated as soon as possible.
+```bibtex
+@INPROCEEDINGS{fahnemann2022interactive,
+  author={Fahnemann, C. and Rother, N. and Blume, H.},
+  booktitle={International Conference on Radar Systems (RADAR 2022)}, 
+  title={Interactive synthetic aperture radar simulator generating and visualizing realistic FMCW data}, 
+  year={2022},
+  volume={2022},
+  number={},
+  pages={725-730},
+  doi={10.1049/ICP.2023.1281}}
+```
