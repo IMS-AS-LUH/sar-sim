@@ -140,3 +140,7 @@ def export_af_numpy(pstate: ProgramState, filename: str):
     assert pstate.sim_result is not None
     _export_numpy(filename, pstate.sim_result.af.data)
     print(f"Autofocussed image exported to {filename}")
+
+@script_command
+def echo(pstate: ProgramState, string: str):
+    print(string)
