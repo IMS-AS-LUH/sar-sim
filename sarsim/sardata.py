@@ -144,7 +144,7 @@ class SarData(object):
     def import_from_directory(cls, directory: str) -> 'SarData':
         sd = SarData()
         capture_id = os.path.basename(directory)
-        if not capture_id.endswith('.sardata'):
+        if not capture_id.rstrip("/").endswith('.sardata'):
             raise Exception("Selected folder does not look like a valid *.sardata archive.")
         capture_id = capture_id[0:-8]
         sd.name = capture_id
