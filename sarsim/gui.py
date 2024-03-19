@@ -408,7 +408,7 @@ class SarGuiSimWorker(QObject):
         try:
             import debugpy
             debugpy.debug_this_thread()
-        except ModuleNotFoundError:
+        except (ModuleNotFoundError, ConnectionRefusedError):
             pass
 
         ts = profiling.TimeStamper()
