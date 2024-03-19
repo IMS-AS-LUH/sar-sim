@@ -52,6 +52,8 @@ def run_command(cmd: str, pstate: ProgramState):
 
     if cmd.startswith('#'): # comment
         return
+    if len(cmd.strip()) == 0: # empty line
+        return
 
     if '=' in cmd: # assignment
         name, value = cmd.split('=', 1)
