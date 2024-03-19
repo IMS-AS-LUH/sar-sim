@@ -458,7 +458,7 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
             min_index = -1
             sample_spacing = math.nan
             metric_sums = np.array([])
-            assert iterations > 1
+            # assert iterations > 1
             for iteration in range(iterations):
                 # Determine points to evaluate
                 sample_points = np.array([])
@@ -499,12 +499,28 @@ def _autofocus_pafo(state: simstate.SarSimParameterState, progress_callback: Cal
                 last_optimum = sample_points[min_index]
 
             # make sure the minimum is not on the edge
-            if min_index == 0:
-                min_index = 1
-            if min_index == samples:
-                min_index = samples - 1
+            if iteration == 0:
+                # if there is only one iteration, the whole [0;2pi] space has been sampled. If the minimum is
+                # found to be on the border we can just wrap around. (x + 2pi == x)
+                if min_index == 0:
+                    interpol_indices = [samples-1, 0, 1]
+                elif min_index == (samples - 1):
+                    interpol_indices = [samples-2, samples-1, 0]
+                else:
+                    interpol_indices = [min_index-1, min_index, min_index+1]
+            else:
+                # if the minimum is on the edge in iteration two or later, we just move th minium one step closer
+                # to the center. Wrapping around is not possible, since we only sample a small sub-interval. Note
+                # that the interpolation of the parabola also works when the minium is not close to the center, it
+                # just loses accuracy.
+                # Mathematically, this case canot happen, but in praxis is does (due to float inaccuaracies?)
+                if min_index == 0:
+                    min_index = 1
+                if min_index == samples:
+                    min_index = samples - 1
             
-            interpol_indices = [min_index-1, min_index, min_index+1]
+                interpol_indices = [min_index-1, min_index, min_index+1]
+            
             interpol_values = metric_sums[interpol_indices] # type: ignore
             
             # Parabolic interpolation
