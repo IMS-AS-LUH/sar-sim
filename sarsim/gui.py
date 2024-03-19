@@ -734,11 +734,7 @@ class SarGuiMainFrame(QMainWindow):
         if not filename:
             return
 
-        # np.save will append to the end of the file if it alreday exists. This is usually not expected
-        # so we delete the file beforehand, if it exists
-        if os.path.exists(filename):
-            os.unlink(filename)
-        np.save(filename, self._plot_window_ac._sim_image.data)
+        commands.export_ac_numpy(filename)
 
     def _update_gui_values_from_state(self):
         self._params_control.update_from_state(self._pstate.simstate)

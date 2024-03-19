@@ -5,6 +5,8 @@ from typing import Callable, Optional
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import os
+import numpy as np
 
 from sarsim import sardata, simjob, simscene, simstate, profiling, simstate
 
@@ -120,3 +122,21 @@ def run_sim(pstate: ProgramState):
     ts = profiling.TimeStamper()
     pstate.sim_result = simjob.run_sim(pstate.simstate, pstate.scene, ts, None, pstate.loaded_dataset, pstate.args.gpu)
 
+def _export_numpy(filename: str, data: np.ndarray):
+    # np.save will append to the end of the file if it alreday exists. This is usually not expected
+    # so we delete the file beforehand, if it exists
+    if os.path.exists(filename):
+        os.unlink(filename)
+    np.save(filename, data)
+
+@script_command
+def export_ac_numpy(pstate: ProgramState, filename: str):
+    assert pstate.sim_result is not None
+    _export_numpy(filename, pstate.sim_result.ac.data)
+    print(f"Azimuth compressed image exported to {filename}")
+
+@script_command
+def export_af_numpy(pstate: ProgramState, filename: str):
+    assert pstate.sim_result is not None
+    _export_numpy(filename, pstate.sim_result.af.data)
+    print(f"Autofocussed image exported to {filename}")
